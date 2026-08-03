@@ -1,0 +1,43 @@
+# --- build output -----------------------------------------------------------
+build/
+cmake-build-*/
+out/
+_deps/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# --- CMake ------------------------------------------------------------------
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json
+cmake_install.cmake
+compile_commands.json
+
+# --- secrets & credential artifacts (this IS a credential SDK — never commit) --
+*.key
+*.pem
+*.p12
+certs/
+.env
+.env.*
+credentials
+*.secret
+# keyward encrypted vault files
+*.kwd
+# agent unix sockets
+*.sock
+
+# --- editor / OS ------------------------------------------------------------
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*~
+
+# Personal, per-project Claude Code overrides (learn-by-building mode)
+CLAUDE.local.md

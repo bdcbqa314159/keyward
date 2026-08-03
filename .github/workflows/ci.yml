@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format:
+    name: clang-format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: clang-format --dry-run -Werror
+        shell: bash
+        run: |
+          shopt -s nullglob
+          files=(include/keyward/*.hpp src/*.cpp tests/*.cpp)
+          if [ ${#files[@]} -eq 0 ]; then echo "no sources yet — skipping"; exit 0; fi
+          clang-format --version
+          clang-format --dry-run -Werror "${files[@]}"
+
+  build:
+    name: build & test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # No-op-green until the CMake project lands (keyward Phase 0). Once
+      # CMakeLists.txt exists, the configure/build/test steps activate.
+      - name: Detect CMake project
+        id: detect
+        shell: bash
+        run: |
+          if [ -f CMakeLists.txt ]; then echo "cmake=true" >> "$GITHUB_OUTPUT";
+          else echo "cmake=false" >> "$GITHUB_OUTPUT"; echo "No CMakeLists.txt yet — skipping build."; fi
+
+      - name: Configure
+        if: steps.detect.outputs.cmake == 'true'
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        if: steps.detect.outputs.cmake == 'true'
+        run: cmake --build build --config Release -j
+
+      - name: Test
+        if: steps.detect.outputs.cmake == 'true'
+        run: ctest --test-dir build --build-config Release --output-on-failure

@@ -1,0 +1,6 @@
+---
+# keyward formatting — Google style at 100 columns (matches the extracted code).
+# Apply: clang-format -i $(git ls-files '*.hpp' '*.cpp')
+BasedOnStyle: Google
+ColumnLimit: 100
+---

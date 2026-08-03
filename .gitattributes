@@ -1,0 +1,12 @@
+# Cross-platform line-ending hygiene: store text as LF in the repo, check out
+# native. Keeps a Windows clone from rewriting every file to CRLF (and back).
+* text=auto
+
+# Explicit for the files we ship.
+*.hpp   text
+*.cpp   text
+*.txt   text
+*.md    text
+*.json  text
+*.yml   text
+CMakeLists.txt text
