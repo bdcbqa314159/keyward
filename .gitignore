@@ -16,6 +16,8 @@ CMakeFiles/
 CMakeUserPresets.json
 cmake_install.cmake
 compile_commands.json
+# clangd background-index cache
+.cache/
 
 # --- secrets & credential artifacts (this IS a credential SDK — never commit) --
 *.key
