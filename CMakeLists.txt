@@ -45,4 +45,9 @@ if(KEYWARD_BUILD_TESTS)
   target_link_libraries(keyward_tests PRIVATE keyward GTest::gtest_main)
   include(GoogleTest)
   gtest_discover_tests(keyward_tests)
+
+  # Task 1 — the Secret type. Red until include/keyward/secret.hpp exists.
+  add_executable(secret_tests tests/secret_test.cpp)
+  target_link_libraries(secret_tests PRIVATE keyward GTest::gtest_main)
+  gtest_discover_tests(secret_tests)
 endif()
