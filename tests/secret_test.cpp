@@ -26,7 +26,7 @@ TEST(Secret, RedactsAndNeverRevealsBytes) {
   Secret s("hunter2");
   const std::string r = s.redacted();
   EXPECT_EQ(r.find("hunter2"), std::string::npos);  // the plaintext must NOT appear
-  EXPECT_FALSE(r.empty());                           // but there is *some* masked marker
+  EXPECT_FALSE(r.empty());                          // but there is *some* masked marker
 }
 
 TEST(Secret, IsMoveOnly) {
