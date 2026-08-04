@@ -18,6 +18,9 @@ cmake_install.cmake
 compile_commands.json
 # clangd background-index cache
 .cache/
+# local dev virtualenv (pinned tools via requirements-dev.txt)
+.venv/
+venv/
 
 # --- secrets & credential artifacts (this IS a credential SDK — never commit) --
 *.key

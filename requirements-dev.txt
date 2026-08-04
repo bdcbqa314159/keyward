@@ -1,0 +1,8 @@
+# Dev-only tools, pinned to match CI (.github/workflows/ci.yml).
+# Install into a LOCAL, gitignored virtualenv — never globally:
+#
+#   python3 -m venv .venv
+#   .venv/bin/pip install -r requirements-dev.txt
+#   .venv/bin/clang-format -i include/keyward/*.hpp src/*.cpp tests/*.cpp
+#
+clang-format==18.1.8
