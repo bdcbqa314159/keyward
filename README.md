@@ -1,16 +1,24 @@
 # keyward
 
-A small, cross-platform C++20 **credential-manager SDK** — store named secrets in
-the OS keychain where available, with a portable file fallback, behind one
-`SecretStore` interface.
+A small, cross-platform C++20 **credential SDK** — a thin, `keyring`-class facade
+over the operating system's own credential manager (macOS Keychain, Linux
+libsecret, Windows Credential Manager), with a portable encrypted-file fallback
+for headless environments.
 
-> **Status: Phase 0** — the OS-agnostic secret store, extracted from the
-> `data_explorer` project. macOS Keychain backend + `0600` file fallback +
-> fallback composition. Records, cross-platform backends (Windows Credential
-> Manager, Linux libsecret), an encrypted-file backend, an authenticator layer,
-> and an ssh-agent-style agent are planned next.
+keyward does **not** roll its own vault: at-rest security is delegated to the
+audited OS stores. keyward's job is correct integration, a flexible credential
+schema, and not leaking secrets while they pass through your process. See
+[docs/DESIGN.md](docs/DESIGN.md) for the full shape and roadmap.
 
-## Use
+> **Status — in progress.** Working today: the `SecretStore` interface with a
+> three-tier resolver (env var → OS keychain → `0600` file), a macOS Keychain
+> backend, and a passphrase-based encrypted blob (`seal`/`unseal`, Argon2id +
+> XChaCha20-Poly1305 via vendored Monocypher). Next up: the schema-driven
+> typed-record `Vault` API, the Linux/Windows backends, an in-process hardening
+> pass (libsodium secure memory), and a small TUI front-end. Not yet reviewed
+> for production use — see [SECURITY.md](SECURITY.md).
+
+## Use today
 
 ```cpp
 #include <keyward/default_store.hpp>
@@ -23,6 +31,36 @@ store->remove("api_key");
 
 Or pick a backend directly (`keyward::FileSecretStore`, `keyward::KeychainSecretStore`,
 `keyward::FallbackSecretStore`).
+
+Encrypt a secret under a passphrase into a self-contained blob (safe to write to
+a `0600` file), and back:
+
+```cpp
+#include <keyward/secret_box.hpp>
+
+std::string blob = keyward::seal("s3cr3t", passphrase);   // salt‖nonce‖mac‖ciphertext
+if (auto plain = keyward::unseal(blob, passphrase)) { /* use *plain */ }
+```
+
+## Where it's heading
+
+The developer declares a credential type and its fields; keyward stores the
+record as one item in the OS credential manager, and a TUI collects it on first
+run. Sketch (**not yet implemented** — see [docs/DESIGN.md](docs/DESIGN.md)):
+
+```cpp
+struct JiraCredential {
+  std::string email, url, token;
+  static keyward::Schema<JiraCredential> schema() {
+    return {{"email", &JiraCredential::email},
+            {"url",   &JiraCredential::url},
+            {"token", &JiraCredential::token, keyward::Sensitive}};
+  }
+};
+
+keyward::Vault vault{"myapp"};
+auto jira = vault.ensure<JiraCredential>("jira", tui);   // prompt on first run, then load
+```
 
 ## Build
 
