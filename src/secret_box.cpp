@@ -1,7 +1,5 @@
 #include "keyward/secret_box.hpp"
 
-#include <Security/cssmconfig.h>
-
 #include <cstddef>
 #include <cstdint>
 #include <vector>
