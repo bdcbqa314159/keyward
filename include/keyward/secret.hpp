@@ -29,6 +29,15 @@ class Secret {
   bool empty() const noexcept { return bytes_.empty(); }
   std::string redacted() const { return std::string(size(), '*'); }
 
+  bool equals(std::string_view candidate) const noexcept {
+    if (bytes_.size() != candidate.size()) return false;
+    volatile unsigned char m{};
+    for (std::size_t i{}; i < bytes_.size(); ++i) {
+      m |= bytes_[i] ^ candidate[i];
+    }
+    return (m == 0);
+  }
+
  private:
   std::string bytes_;
 };
