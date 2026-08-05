@@ -50,4 +50,9 @@ if(KEYWARD_BUILD_TESTS)
   add_executable(secret_tests tests/secret_test.cpp)
   target_link_libraries(secret_tests PRIVATE keyward GTest::gtest_main)
   gtest_discover_tests(secret_tests)
+
+  # Task 2 — constant-time compare. Red until Secret::equals exists.
+  add_executable(secret_eq_tests tests/secret_eq_test.cpp)
+  target_link_libraries(secret_eq_tests PRIVATE keyward GTest::gtest_main)
+  gtest_discover_tests(secret_eq_tests)
 endif()
