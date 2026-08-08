@@ -2,6 +2,7 @@
 # (symlinked to the repo root), so includes and the C++ standard resolve without
 # guessing. These settings just quiet the noisy, low-value diagnostics.
 CompileFlags:
+  CompilationDatabase: .      # read compile_commands.json (symlinked at the repo root)
   Add: [-std=c++20]           # fallback for files not in the compile database
 
 Diagnostics:
