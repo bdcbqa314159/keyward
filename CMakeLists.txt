@@ -71,4 +71,9 @@ if(KEYWARD_BUILD_TESTS)
   add_executable(record_codec_tests tests/record_codec_test.cpp)
   target_link_libraries(record_codec_tests PRIVATE keyward GTest::gtest_main)
   gtest_discover_tests(record_codec_tests)
+
+  # Task 5 — typed schema mapping (header-only). Red until schema.hpp is filled.
+  add_executable(schema_tests tests/schema_test.cpp)
+  target_link_libraries(schema_tests PRIVATE keyward GTest::gtest_main)
+  gtest_discover_tests(schema_tests)
 endif()
