@@ -17,6 +17,7 @@ add_library(keyward
   src/default_store.cpp
   src/random.cpp
   src/secret_box.cpp
+  src/record_codec.cpp
   third_party/monocypher/monocypher.c
 )
 add_library(keyward::keyward ALIAS keyward)
@@ -65,4 +66,9 @@ if(KEYWARD_BUILD_TESTS)
   add_executable(secret_box_tests tests/secret_box_test.cpp)
   target_link_libraries(secret_box_tests PRIVATE keyward GTest::gtest_main)
   gtest_discover_tests(secret_box_tests)
+
+  # Task 4 — record codec. Red until src/record_codec.cpp is implemented.
+  add_executable(record_codec_tests tests/record_codec_test.cpp)
+  target_link_libraries(record_codec_tests PRIVATE keyward GTest::gtest_main)
+  gtest_discover_tests(record_codec_tests)
 endif()
