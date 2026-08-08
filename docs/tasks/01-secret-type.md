@@ -3,7 +3,7 @@
 ## Context
 keyward stores and moves secrets, but right now every secret is a bare `std::string`: copyable,
 printable, and left sitting in memory after use. Before any backend touches real credentials we
-need a **secure value type** that makes the security invariants in `CLAUDE.md` *structural*, not
+need a **secure value type** that makes the project's security invariants *structural*, not
 hopeful. It's the foundation the constant-time compare (task 2) and the encrypted-file backend
 build on. **This is yours to write** — I've laid down the failing test; you make it green.
 
@@ -67,7 +67,7 @@ Two invariants the tests can't easily prove — **checked in review + the `asan`
 - Say **"show me"** only after you've tried and are stuck; then I show the minimal fix and we move on.
 
 ## Constraints
-- C++20, header-only, no new dependencies. Honour the `CLAUDE.md` invariants & conventions
+- C++20, header-only, no new dependencies. Honour the project's security invariants & conventions
   (value semantics, `unique_ptr` not `shared_ptr`, interfaces clean).
 - Don't edit the tests to pass — make `Secret` satisfy them.
 

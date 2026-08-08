@@ -15,8 +15,7 @@ before any public disclosure.
 ## In scope
 
 The SDK's handling of secrets: the storage backends, the encrypted-file format, memory
-zeroization, constant-time comparison, and the agent/IPC trust boundary — see the **security
-invariants** in [CLAUDE.md](CLAUDE.md).
+zeroization, constant-time comparison, and the agent/IPC trust boundary.
 
 ## Out of scope
 
