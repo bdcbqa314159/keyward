@@ -6,10 +6,18 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)  # for clangd / editor language server
 
+# --- vendored Monocypher --------------------------------------------------
+# Argon2 + XChaCha20-Poly1305 for the encrypted-file backend. Its own target so
+# our strict warning flags don't apply to third-party code. PIC so keyward can
+# be built shared later.
+add_library(monocypher STATIC third_party/monocypher/monocypher.c)
+target_include_directories(monocypher PUBLIC third_party/monocypher)
+set_target_properties(monocypher PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 # --- library --------------------------------------------------------------
 # OS-agnostic secret store extracted from data_explorer. The macOS Keychain
-# backend needs Apple frameworks; the encrypted-file backend vendors Monocypher
-# (Argon2 + XChaCha20-Poly1305), which stays a private implementation detail.
+# backend needs Apple frameworks; Monocypher stays a private implementation
+# detail (linked privately below, never in a public header).
 add_library(keyward
   src/file_secret_store.cpp
   src/keychain_secret_store.cpp   # macOS-only body; compiles empty elsewhere
@@ -18,7 +26,6 @@ add_library(keyward
   src/random.cpp
   src/secret_box.cpp
   src/record_codec.cpp
-  third_party/monocypher/monocypher.c
 )
 add_library(keyward::keyward ALIAS keyward)
 target_compile_features(keyward PUBLIC cxx_std_20)
@@ -26,8 +33,16 @@ target_include_directories(keyward PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-# Monocypher is used only inside keyward's .cpp files, never in a public header.
-target_include_directories(keyward PRIVATE third_party/monocypher)
+target_link_libraries(keyward PRIVATE monocypher)
+
+# Strict warnings on our own code (vendored Monocypher, above, is exempt).
+# PRIVATE so consumers don't inherit our warning flags.
+if(MSVC)
+  target_compile_options(keyward PRIVATE /W4)
+else()
+  target_compile_options(keyward PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 if(APPLE)
   target_link_libraries(keyward PUBLIC "-framework Security" "-framework CoreFoundation")
 endif()

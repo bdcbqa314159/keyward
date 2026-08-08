@@ -59,7 +59,7 @@ std::optional<std::string> unseal(std::string_view blob, std::string_view passph
 
   crypto_argon2_config cfg{CRYPTO_ARGON2_ID, 100000, 3, 1};
   crypto_argon2_inputs in{u8(passphrase), salt, static_cast<uint32_t>(passphrase.size()),
-                          static_cast<uint32_t>(16)};
+                          static_cast<uint32_t>(kSaltSize)};
   crypto_argon2(key, sizeof(key), work.data(), cfg, in, crypto_argon2_no_extras);
   crypto_wipe(work.data(), work.size());
 

@@ -60,7 +60,7 @@ the review proves *constant-time*.
 - Say **"show me"** only after you've tried and are stuck.
 
 ## Constraints
-- C++20, no new dependencies, honour the `CLAUDE.md` invariants.
+- C++20, no new dependencies, honour the project's security invariants.
 - No `if`/early-`return` that depends on a *content* byte inside the compare loop.
 - Don't edit the tests to pass.
 
