@@ -76,4 +76,9 @@ if(KEYWARD_BUILD_TESTS)
   add_executable(schema_tests tests/schema_test.cpp)
   target_link_libraries(schema_tests PRIVATE keyward GTest::gtest_main)
   gtest_discover_tests(schema_tests)
+
+  # Task 6 — the Vault facade. Red until Vault::save/load are implemented.
+  add_executable(vault_tests tests/vault_test.cpp)
+  target_link_libraries(vault_tests PRIVATE keyward GTest::gtest_main)
+  gtest_discover_tests(vault_tests)
 endif()
