@@ -6,6 +6,7 @@
 #include "keyward/fallback_secret_store.hpp"
 #include "keyward/file_secret_store.hpp"
 #include "keyward/keychain_secret_store.hpp"
+#include "keyward/windows_credential_store.hpp"
 
 namespace fs = std::filesystem;
 
@@ -33,15 +34,21 @@ fs::path defaultStorePath(const std::string& app) {
 }
 
 std::unique_ptr<SecretStore> defaultSecretStore(const std::string& app) {
-  auto file = std::make_unique<FileSecretStore>(defaultStorePath(app));
 #if defined(__APPLE__)
   // Keychain (namespaced to `app`) in front; the 0600 file stays readable so an
   // existing secret still works and migrates to the Keychain on the next `set`.
-  return std::make_unique<FallbackSecretStore>(std::make_unique<KeychainSecretStore>(app),
-                                               std::move(file));
+  return std::make_unique<FallbackSecretStore>(
+      std::make_unique<KeychainSecretStore>(app),
+      std::make_unique<FileSecretStore>(defaultStorePath(app)));
+#elif defined(_WIN32)
+  // Windows = Credential Manager ONLY — no file fallback. CredMan is itself
+  // DPAPI-encrypted, OS-managed storage; a self-managed 0600 file on Windows is
+  // just a read-only attribute, not a real ACL, so falling back to it would be a
+  // silent downgrade. Fail closed instead (the backend throws on any error).
+  return std::make_unique<WindowsCredentialStore>(app);
 #else
-  // TODO: Windows Credential Manager / Linux libsecret in front here.
-  return file;
+  // TODO: Linux libsecret in front here; file store is the universal fallback.
+  return std::make_unique<FileSecretStore>(defaultStorePath(app));
 #endif
 }
 
