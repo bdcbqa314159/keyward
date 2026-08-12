@@ -107,4 +107,9 @@ if(KEYWARD_BUILD_TESTS)
   add_executable(windows_credential_store_tests tests/windows_credential_store_test.cpp)
   target_link_libraries(windows_credential_store_tests PRIVATE keyward GTest::gtest_main)
   gtest_discover_tests(windows_credential_store_tests)
+
+  # Task 7 — Prompter protocol + Vault::ensure/revise (fake-prompter oracle).
+  add_executable(prompter_tests tests/prompter_test.cpp)
+  target_link_libraries(prompter_tests PRIVATE keyward GTest::gtest_main)
+  gtest_discover_tests(prompter_tests)
 endif()
