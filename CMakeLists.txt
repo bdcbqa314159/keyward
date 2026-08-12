@@ -112,4 +112,10 @@ if(KEYWARD_BUILD_TESTS)
   add_executable(prompter_tests tests/prompter_test.cpp)
   target_link_libraries(prompter_tests PRIVATE keyward GTest::gtest_main)
   gtest_discover_tests(prompter_tests)
+
+  # Gap 3 stretch — end-to-end Vault-over-real-Credential-Manager smoke test.
+  # Opt-in (KEYWARD_HOST_TESTS=1); skips otherwise and off Windows.
+  add_executable(windows_vault_smoke_tests tests/windows_vault_smoke_test.cpp)
+  target_link_libraries(windows_vault_smoke_tests PRIVATE keyward GTest::gtest_main)
+  gtest_discover_tests(windows_vault_smoke_tests)
 endif()
