@@ -26,9 +26,8 @@ std::string targetName(const std::string& app, const std::string& name) {
 // std::wstring is NUL-terminated by c_str() at the call site.
 std::wstring toWide(const std::string& s) {
   if (s.empty()) return std::wstring();
-  const int need =
-      MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s.data(), static_cast<int>(s.size()),
-                          nullptr, 0);
+  const int need = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s.data(),
+                                       static_cast<int>(s.size()), nullptr, 0);
   if (need <= 0) throw std::runtime_error("keyward: invalid UTF-8 in credential target name");
   std::wstring w(static_cast<size_t>(need), L'\0');
   MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s.data(), static_cast<int>(s.size()), w.data(),
