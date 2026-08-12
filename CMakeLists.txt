@@ -20,7 +20,8 @@ set_target_properties(monocypher PROPERTIES POSITION_INDEPENDENT_CODE ON)
 # detail (linked privately below, never in a public header).
 add_library(keyward
   src/file_secret_store.cpp
-  src/keychain_secret_store.cpp   # macOS-only body; compiles empty elsewhere
+  src/keychain_secret_store.cpp        # macOS-only body; compiles empty elsewhere
+  src/windows_credential_store.cpp     # Windows-only body; compiles empty elsewhere
   src/fallback_secret_store.cpp
   src/default_store.cpp
   src/random.cpp
@@ -45,6 +46,10 @@ endif()
 
 if(APPLE)
   target_link_libraries(keyward PUBLIC "-framework Security" "-framework CoreFoundation")
+endif()
+
+if(WIN32)
+  target_link_libraries(keyward PUBLIC Advapi32)  # Credential Manager: CredWrite/Read/Delete
 endif()
 
 # --- tests ----------------------------------------------------------------
@@ -96,4 +101,10 @@ if(KEYWARD_BUILD_TESTS)
   add_executable(vault_tests tests/vault_test.cpp)
   target_link_libraries(vault_tests PRIVATE keyward GTest::gtest_main)
   gtest_discover_tests(vault_tests)
+
+  # Gap 3 — Windows Credential Manager backend. Red until the body is written
+  # (skipped off Windows). Contract oracle for WindowsCredentialStore.
+  add_executable(windows_credential_store_tests tests/windows_credential_store_test.cpp)
+  target_link_libraries(windows_credential_store_tests PRIVATE keyward GTest::gtest_main)
+  gtest_discover_tests(windows_credential_store_tests)
 endif()
