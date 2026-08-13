@@ -107,6 +107,30 @@ Current weakest link: secrets held in a plain `std::string` can reach swap or a
 core dump. The libsodium pass (secure memory, `randombytes_buf`, `sodium_memcmp`)
 closes it.
 
+### Per-platform trust — the OS stores are not equivalent
+
+Delegating at-rest security to the OS store means inheriting *its* threat model,
+and the three differ in one dimension that matters:
+
+- **macOS Keychain** ties each item to an **access-control list**: the creating
+  app can restrict reads to itself, so another app running as the same user does
+  **not** automatically get the secret.
+- **Windows Credential Manager** has **no per-app isolation**. A generic
+  credential is DPAPI-encrypted with a key bound to the user's logon, so it is
+  protected against *other users* and *at-rest disk theft* — but **any process
+  running in the same logon session can `CredRead` it**. keyward's namespacing
+  (`keyward:<app>:<name>`) is organizational, not a security boundary.
+- **Linux Secret Service** sits in between: the collection is unlocked per login
+  session; isolation depends on the keyring daemon and desktop policy.
+
+Practical guidance: on Windows, keyward defends against other users and a stolen
+disk, **not** against malicious code already running as you. That is the same
+guarantee as Python `keyring` / the Rust `keyring` crate on Windows — it is a
+property of Credential Manager, not a keyward defect — but a secrets SDK should
+state it plainly. The oversize blob limit (2560 bytes) is likewise a Credential
+Manager property: keyward **fails closed** above it rather than downgrade to a
+weaker store.
+
 ## Roadmap
 
 Built and merged: `Secret` (zeroizing, constant-time compare); `seal`/`unseal`
