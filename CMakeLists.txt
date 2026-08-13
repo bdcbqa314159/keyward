@@ -52,6 +52,18 @@ if(WIN32)
   target_link_libraries(keyward PUBLIC Advapi32)  # Credential Manager: CredWrite/Read/Delete
 endif()
 
+# --- optional CLI prompter component --------------------------------------
+# keyward::cli — a terminal Prompter (no-echo for secrets). Its own target so
+# core consumers that don't want a CLI never pull it in.
+add_library(keyward_cli src/cli_prompter.cpp)
+add_library(keyward::cli ALIAS keyward_cli)
+target_link_libraries(keyward_cli PUBLIC keyward)
+if(MSVC)
+  target_compile_options(keyward_cli PRIVATE /W4)
+else()
+  target_compile_options(keyward_cli PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 # --- tests ----------------------------------------------------------------
 # On by default when keyward is the top-level project; off when pulled in via
 # FetchContent by a consumer.
@@ -118,4 +130,9 @@ if(KEYWARD_BUILD_TESTS)
   add_executable(windows_vault_smoke_tests tests/windows_vault_smoke_test.cpp)
   target_link_libraries(windows_vault_smoke_tests PRIVATE keyward GTest::gtest_main)
   gtest_discover_tests(windows_vault_smoke_tests)
+
+  # Task 8 — the CLI prompter (keyward::cli), stream-injected oracle.
+  add_executable(cli_prompter_tests tests/cli_prompter_test.cpp)
+  target_link_libraries(cli_prompter_tests PRIVATE keyward_cli GTest::gtest_main)
+  gtest_discover_tests(cli_prompter_tests)
 endif()
