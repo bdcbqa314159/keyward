@@ -4,9 +4,11 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <map>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "keyward/schema.hpp"
 #include "keyward/secret_store.hpp"
@@ -23,6 +25,11 @@ class InMemoryStore : public keyward::SecretStore {
   }
   void set(const std::string& name, const std::string& value) override { data_[name] = value; }
   void remove(const std::string& name) override { data_.erase(name); }
+  std::vector<std::string> list() override {
+    std::vector<std::string> names;
+    for (const auto& [k, v] : data_) names.push_back(k);
+    return names;
+  }
   std::string location() const override { return "in-memory"; }
 
   std::map<std::string, std::string> data_;  // public so a test can seed/inspect it
@@ -83,6 +90,16 @@ TEST(Vault, SaveOverwrites) {
   auto out = vault.load<DemoCred>("jira");
   ASSERT_TRUE(out.has_value());
   EXPECT_EQ(*out, (DemoCred{"new", "u2", "t2"}));
+}
+
+TEST(Vault, ListsSavedServices) {
+  auto vault = make_vault();
+  vault.save("jira", DemoCred{"e", "u", "t"});
+  vault.save("github", DemoCred{"e2", "u2", "t2"});
+  const std::vector<std::string> names = vault.list();
+  EXPECT_EQ(names.size(), 2u);
+  EXPECT_NE(std::find(names.begin(), names.end(), "jira"), names.end());
+  EXPECT_NE(std::find(names.begin(), names.end(), "github"), names.end());
 }
 
 TEST(Vault, LoadCorruptBytesIsNullopt) {

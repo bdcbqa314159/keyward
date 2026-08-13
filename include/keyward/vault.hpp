@@ -29,6 +29,10 @@ class Vault {
   bool has(const std::string& service) { return store_->get(service).has_value(); }
   void remove(const std::string& service) { store_->remove(service); }
 
+  // Names of all stored services (for a listing / picker UI). Throws if the
+  // underlying backend can't enumerate (see SecretStore::list).
+  std::vector<std::string> list() { return store_->list(); }
+
   // Serialize `record` (schema -> Fields -> bytes) and store it under `service`.
   template <class T>
   void save(const std::string& service, const T& record) {
