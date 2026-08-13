@@ -64,6 +64,34 @@ else()
   target_compile_options(keyward_cli PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+# --- optional TUI prompter component (needs FTXUI) ------------------------
+# keyward::tui — an FTXUI form Prompter. Off unless top-level (a FetchContent
+# consumer of keyward core never pays for FTXUI); flip -DKEYWARD_BUILD_TUI=ON to
+# force it. FTXUI headers are treated as SYSTEM so their warnings don't trip ours.
+option(KEYWARD_BUILD_TUI "Build the keyward::tui component (fetches FTXUI)" ${PROJECT_IS_TOP_LEVEL})
+if(KEYWARD_BUILD_TUI)
+  include(FetchContent)
+  FetchContent_Declare(ftxui
+    GIT_REPOSITORY https://github.com/ArthurSonzogni/FTXUI.git
+    GIT_TAG        v5.0.0
+    GIT_SHALLOW    TRUE
+  )
+  set(FTXUI_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+  set(FTXUI_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+  set(FTXUI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  FetchContent_MakeAvailable(ftxui)
+
+  add_library(keyward_tui src/tui_prompter.cpp)
+  add_library(keyward::tui ALIAS keyward_tui)
+  target_link_libraries(keyward_tui PUBLIC keyward PRIVATE ftxui::component ftxui::dom ftxui::screen)
+  target_include_directories(keyward_tui SYSTEM PRIVATE ${ftxui_SOURCE_DIR}/include)
+  if(MSVC)
+    target_compile_options(keyward_tui PRIVATE /W4)
+  else()
+    target_compile_options(keyward_tui PRIVATE -Wall -Wextra -Wpedantic)
+  endif()
+endif()
+
 # --- tests ----------------------------------------------------------------
 # On by default when keyward is the top-level project; off when pulled in via
 # FetchContent by a consumer.
@@ -135,4 +163,13 @@ if(KEYWARD_BUILD_TESTS)
   add_executable(cli_prompter_tests tests/cli_prompter_test.cpp)
   target_link_libraries(cli_prompter_tests PRIVATE keyward_cli GTest::gtest_main)
   gtest_discover_tests(cli_prompter_tests)
+
+  # Task 9 — the TUI prompter (keyward::tui). Only when the component is built.
+  # Interactive form isn't headless-testable; this checks the title logic + that
+  # it links and satisfies Prompter.
+  if(KEYWARD_BUILD_TUI)
+    add_executable(tui_prompter_tests tests/tui_prompter_test.cpp)
+    target_link_libraries(tui_prompter_tests PRIVATE keyward_tui GTest::gtest_main)
+    gtest_discover_tests(tui_prompter_tests)
+  endif()
 endif()
