@@ -110,6 +110,10 @@ if(KEYWARD_BUILD_TESTS)
   add_executable(keyward_tests tests/secret_store_test.cpp)
   target_link_libraries(keyward_tests PRIVATE keyward GTest::gtest_main)
   include(GoogleTest)
+  # Discover tests when ctest runs, not as a POST_BUILD step. POST_BUILD runs each
+  # test exe during the build to enumerate tests and reads back a temp file, which
+  # intermittently races under parallel builds (ParseTestList "file not found").
+  set(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE PRE_TEST)
   gtest_discover_tests(keyward_tests)
 
   # Task 1 — the Secret type. Red until include/keyward/secret.hpp exists.
