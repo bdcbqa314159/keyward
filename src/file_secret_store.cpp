@@ -2,13 +2,63 @@
 
 #include <fstream>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
+
+#if defined(_WIN32)
+// clang-format off
+#include <windows.h>
+#include <aclapi.h>
+// clang-format on
+#endif
 
 namespace fs = std::filesystem;
 
 namespace keyward {
 namespace {
+
+#if defined(_WIN32)
+// Replace a file's DACL with a single owner-only ACE, and mark it PROTECTED so
+// inherited ACEs (which typically grant the Users group) are stripped. On
+// Windows, std::filesystem::permissions cannot express this — 0600 there only
+// toggles the read-only *attribute*, which is not access control. Throws on any
+// failure so the caller can fail closed rather than leave a readable secret.
+void restrictToOwnerWin(const fs::path& p) {
+  HANDLE token = nullptr;
+  if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token))
+    throw std::runtime_error("keyward: OpenProcessToken failed");
+  DWORD len = 0;
+  GetTokenInformation(token, TokenUser, nullptr, 0, &len);  // size probe
+  std::vector<BYTE> buf(len);
+  const BOOL ok = GetTokenInformation(token, TokenUser, buf.data(), len, &len);
+  CloseHandle(token);
+  if (!ok) throw std::runtime_error("keyward: GetTokenInformation failed");
+  PSID userSid = reinterpret_cast<TOKEN_USER*>(buf.data())->User.Sid;
+
+  EXPLICIT_ACCESSW ea = {};
+  ea.grfAccessPermissions = GENERIC_ALL;
+  ea.grfAccessMode = SET_ACCESS;
+  ea.grfInheritance = NO_INHERITANCE;
+  ea.Trustee.TrusteeForm = TRUSTEE_IS_SID;
+  ea.Trustee.TrusteeType = TRUSTEE_IS_USER;
+  ea.Trustee.ptstrName = reinterpret_cast<LPWSTR>(userSid);
+
+  PACL acl = nullptr;
+  if (SetEntriesInAclW(1, &ea, nullptr, &acl) != ERROR_SUCCESS)
+    throw std::runtime_error("keyward: SetEntriesInAcl failed");
+
+  const std::wstring wpath = p.wstring();
+  const DWORD rc =
+      SetNamedSecurityInfoW(const_cast<LPWSTR>(wpath.c_str()), SE_FILE_OBJECT,
+                            DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+                            nullptr, nullptr, acl, nullptr);
+  if (acl != nullptr) LocalFree(acl);
+  if (rc != ERROR_SUCCESS)
+    throw std::runtime_error("keyward: SetNamedSecurityInfo failed (error " + std::to_string(rc) +
+                             ")");
+}
+#endif  // _WIN32
 
 std::string trimTrailing(std::string v) {
   while (!v.empty() &&
@@ -39,8 +89,20 @@ void writeAll(const fs::path& p, const std::vector<std::pair<std::string, std::s
     if (!out) throw std::runtime_error("cannot write " + p.string());
     for (const auto& [k, v] : kv) out << k << "=" << v << "\n";
   }
+#if defined(_WIN32)
+  // A real owner-only DACL — the 0600 attribute is not access control here. Fail
+  // closed: if we can't lock the file down, delete it rather than leave a
+  // world-readable secret behind.
+  try {
+    restrictToOwnerWin(p);
+  } catch (...) {
+    fs::remove(p, ec);
+    throw;
+  }
+#else
   fs::permissions(p, fs::perms::owner_read | fs::perms::owner_write,  // 0600
                   fs::perm_options::replace, ec);
+#endif
 }
 
 }  // namespace
