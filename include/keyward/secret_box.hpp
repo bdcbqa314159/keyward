@@ -3,6 +3,8 @@
 #include <string>
 #include <string_view>
 
+#include "keyward/secret.hpp"
+
 namespace keyward {
 
 // Passphrase-based authenticated encryption for a small secret (a credential
@@ -16,10 +18,11 @@ namespace keyward {
 // (random salt + nonce), even for identical inputs.
 std::string seal(std::string_view plaintext, std::string_view passphrase);
 
-// Decrypt a blob produced by seal(). Returns the plaintext, or std::nullopt if
+// Decrypt a blob produced by seal(). Returns the recovered plaintext in a
+// Secret (libsodium secure memory: no-swap, zeroed on drop), or std::nullopt if
 // the passphrase is wrong, the blob was tampered with, or it is malformed /
 // truncated. Never throws on bad input; wrong input is a nullopt, not an
 // exception.
-std::optional<std::string> unseal(std::string_view blob, std::string_view passphrase);
+std::optional<Secret> unseal(std::string_view blob, std::string_view passphrase);
 
 }  // namespace keyward

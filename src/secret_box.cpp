@@ -46,7 +46,7 @@ std::string seal(std::string_view plaintext, std::string_view passphrase) {
   return salt + nonce + mac_string + cipher_string;
 }
 
-std::optional<std::string> unseal(std::string_view blob, std::string_view passphrase) {
+std::optional<Secret> unseal(std::string_view blob, std::string_view passphrase) {
   constexpr std::size_t kHeader = 56;  // 16 + 24 + 16
   constexpr std::size_t kSaltSize = 16;
 
@@ -75,7 +75,10 @@ std::optional<std::string> unseal(std::string_view blob, std::string_view passph
   int rc = crypto_aead_unlock(out.data(), mac, key.get(), nonce, nullptr, 0, cipher, cipher_size);
   // key auto-zeroed + freed on scope exit — including this early-return path
   if (rc != 0) return std::nullopt;
-  return std::string(reinterpret_cast<const char*>(out.data()), cipher_size);
+  // Copy the recovered plaintext into secure memory, then wipe the plain buffer.
+  Secret plaintext(std::string_view(reinterpret_cast<const char*>(out.data()), cipher_size));
+  crypto_wipe(out.data(), out.size());
+  return plaintext;
 }
 
 }  // namespace keyward
