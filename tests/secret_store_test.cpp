@@ -10,6 +10,13 @@
 #include "keyward/fallback_secret_store.hpp"
 #include "keyward/file_secret_store.hpp"
 
+#if defined(_WIN32)
+// clang-format off
+#include <windows.h>
+#include <aclapi.h>
+// clang-format on
+#endif
+
 using namespace keyward;
 namespace fs = std::filesystem;
 
@@ -63,6 +70,36 @@ TEST(FileSecretStore, ListsStoredNames) {
 
   fs::remove_all(p.parent_path(), ec);
 }
+
+#if defined(_WIN32)
+TEST(FileSecretStore, WindowsDaclIsOwnerOnlyAndProtected) {
+  const fs::path p = fs::temp_directory_path() / "keyward_test_dacl" / "credentials";
+  std::error_code ec;
+  fs::remove_all(p.parent_path(), ec);
+
+  FileSecretStore(p).set("token", "secret");  // triggers the DACL lockdown
+  ASSERT_TRUE(fs::exists(p));
+
+  PSECURITY_DESCRIPTOR sd = nullptr;
+  PACL dacl = nullptr;
+  const DWORD rc =
+      GetNamedSecurityInfoW(p.wstring().c_str(), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, nullptr,
+                            nullptr, &dacl, nullptr, &sd);
+  ASSERT_EQ(rc, static_cast<DWORD>(ERROR_SUCCESS));
+  ASSERT_NE(dacl, nullptr);
+
+  // Inherited ACEs (e.g. the Users group) must be stripped, and only the owner
+  // should remain — a single explicit ACE.
+  SECURITY_DESCRIPTOR_CONTROL control = 0;
+  DWORD revision = 0;
+  ASSERT_TRUE(GetSecurityDescriptorControl(sd, &control, &revision));
+  EXPECT_TRUE(control & SE_DACL_PROTECTED);
+  EXPECT_EQ(dacl->AceCount, 1);
+
+  if (sd != nullptr) LocalFree(sd);
+  fs::remove_all(p.parent_path(), ec);
+}
+#endif  // _WIN32
 
 TEST(FallbackSecretStore, ReadsFallbackThenMigratesToPrimary) {
   const fs::path base = fs::temp_directory_path() / "keyward_test_fb";
