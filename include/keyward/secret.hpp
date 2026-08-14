@@ -1,44 +1,56 @@
 #pragma once
+#include <cstddef>
+#include <cstring>
 #include <string>
 #include <string_view>
 
+#include "keyward/secure_memory.hpp"
+
 namespace keyward {
 
-inline void secure_wipe(void* p, std::size_t n) noexcept {
-  volatile unsigned char* v = static_cast<volatile unsigned char*>(p);
-  while (n--) *v++ = 0;
-}
-
+// A secret byte buffer held in libsodium secure memory: guard-paged, mlock'd
+// (never swapped to disk), and zeroed on destruction. Move-only; redacts itself
+// in any textual form. libsodium stays private (behind secure_memory.hpp).
 class Secret {
  public:
-  explicit Secret(std::string bytes) : bytes_(std::move(bytes)) {}
-  ~Secret() { secure_wipe(bytes_.data(), bytes_.size()); }
-  Secret(Secret&& secret) noexcept : bytes_(std::move(secret.bytes_)) {}
-  Secret& operator=(Secret&& secret) noexcept {
-    if (this != &secret) {
-      secure_wipe(bytes_.data(), bytes_.size());
-      bytes_ = std::move(secret.bytes_);
+  explicit Secret(std::string_view bytes) : size_(bytes.size()) {
+    data_ = static_cast<unsigned char*>(secure_alloc(size_));
+    if (size_) std::memcpy(data_, bytes.data(), size_);
+  }
+  ~Secret() { secure_free(data_); }  // secure_free zeroes the region before releasing
+
+  Secret(Secret&& other) noexcept : data_(other.data_), size_(other.size_) {
+    other.data_ = nullptr;
+    other.size_ = 0;
+  }
+  Secret& operator=(Secret&& other) noexcept {
+    if (this != &other) {
+      secure_free(data_);
+      data_ = other.data_;
+      size_ = other.size_;
+      other.data_ = nullptr;
+      other.size_ = 0;
     }
     return *this;
   }
 
   Secret(const Secret&) = delete;
   Secret& operator=(const Secret&) = delete;
-  std::string_view view() const noexcept { return bytes_; }
-  std::size_t size() const noexcept { return bytes_.size(); }
-  bool empty() const noexcept { return bytes_.empty(); }
-  std::string redacted() const { return std::string(size(), '*'); }
 
+  std::string_view view() const noexcept { return {reinterpret_cast<const char*>(data_), size_}; }
+  std::size_t size() const noexcept { return size_; }
+  bool empty() const noexcept { return size_ == 0; }
+  std::string redacted() const { return std::string(size_, '*'); }
+
+  // Constant-time comparison against a candidate (libsodium sodium_memcmp).
   bool equals(std::string_view candidate) const noexcept {
-    if (bytes_.size() != candidate.size()) return false;
-    volatile unsigned char m{};
-    for (std::size_t i{}; i < bytes_.size(); ++i) {
-      m |= bytes_[i] ^ candidate[i];
-    }
-    return (m == 0);
+    if (candidate.size() != size_) return false;
+    return secure_equal(data_, candidate.data(), size_);
   }
 
  private:
-  std::string bytes_;
+  unsigned char* data_ = nullptr;
+  std::size_t size_ = 0;
 };
+
 }  // namespace keyward

@@ -14,6 +14,17 @@ add_library(monocypher STATIC third_party/monocypher/monocypher.c)
 target_include_directories(monocypher PUBLIC third_party/monocypher)
 set_target_properties(monocypher PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+# --- fetched libsodium (audited secure memory + CSPRNG + constant-time) ----
+# Via the robinlinden/libsodium-cmake wrapper, pinned (which pins libsodium via
+# its submodule). PRIVATE to keyward — only secure_memory.cpp sees <sodium.h>.
+include(FetchContent)
+FetchContent_Declare(Sodium
+  GIT_REPOSITORY https://github.com/robinlinden/libsodium-cmake.git
+  GIT_TAG        9b2848dfc1b917a9410f0de9d81059b26cbfaa8d
+)
+set(SODIUM_DISABLE_TESTS ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(Sodium)
+
 # --- library --------------------------------------------------------------
 # OS-agnostic secret store extracted from data_explorer. The macOS Keychain
 # backend needs Apple frameworks; Monocypher stays a private implementation
@@ -27,6 +38,7 @@ add_library(keyward
   src/random.cpp
   src/secret_box.cpp
   src/record_codec.cpp
+  src/secure_memory.cpp
 )
 add_library(keyward::keyward ALIAS keyward)
 target_compile_features(keyward PUBLIC cxx_std_20)
@@ -34,7 +46,7 @@ target_include_directories(keyward PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-target_link_libraries(keyward PRIVATE monocypher)
+target_link_libraries(keyward PRIVATE monocypher sodium)
 
 # Strict warnings on our own code (vendored Monocypher, above, is exempt).
 # PRIVATE so consumers don't inherit our warning flags.
