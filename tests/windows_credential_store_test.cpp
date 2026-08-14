@@ -5,7 +5,9 @@
 
 #if defined(_WIN32)
 
+#include <algorithm>
 #include <string>
+#include <vector>
 
 #include "keyward/windows_credential_store.hpp"
 
@@ -89,6 +91,23 @@ TEST(WindowsCredentialStore, UnicodeNameRoundTrips) {
   s.set(name, "secret");
   ASSERT_TRUE(s.get(name).has_value());
   EXPECT_EQ(s.get(name).value(), "secret");
+}
+
+TEST(WindowsCredentialStore, ListReturnsStoredNamesWithinNamespace) {
+  auto s = freshStore();
+  RemoveOnExit ca{&s, "list-a"};
+  RemoveOnExit cb{&s, "list-b"};
+  s.set("list-a", "1");
+  s.set("list-b", "2");
+
+  const std::vector<std::string> names = s.list();  // strips the "keyward:<app>:" prefix
+  const auto has = [&](const std::string& n) {
+    return std::find(names.begin(), names.end(), n) != names.end();
+  };
+  EXPECT_TRUE(has("list-a"));
+  EXPECT_TRUE(has("list-b"));
+  // Names come back unqualified (no namespace prefix leaking through).
+  for (const auto& n : names) EXPECT_EQ(n.find("keyward:"), std::string::npos);
 }
 
 #else  // not Windows

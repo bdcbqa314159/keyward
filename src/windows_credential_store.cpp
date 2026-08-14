@@ -7,9 +7,11 @@
 #include <wincred.h>
 // clang-format on
 
+#include <cwchar>
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace keyward {
 namespace {
@@ -33,6 +35,19 @@ std::wstring toWide(const std::string& s) {
   MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s.data(), static_cast<int>(s.size()), w.data(),
                       need);
   return w;
+}
+
+// UTF-16 -> UTF-8, for a NUL-terminated wide string (e.g. an enumerated target
+// name). Returns empty on a null/empty input or a conversion failure.
+std::string fromWide(const wchar_t* w) {
+  if (w == nullptr) return {};
+  const int len = static_cast<int>(std::wcslen(w));
+  if (len == 0) return {};
+  const int need = WideCharToMultiByte(CP_UTF8, 0, w, len, nullptr, 0, nullptr, nullptr);
+  if (need <= 0) return {};
+  std::string s(static_cast<size_t>(need), '\0');
+  WideCharToMultiByte(CP_UTF8, 0, w, len, s.data(), need, nullptr, nullptr);
+  return s;
 }
 
 // A Win32 error code rendered "error N: <system message>" for diagnostics.
@@ -123,6 +138,28 @@ void WindowsCredentialStore::remove(const std::string& name) {
     throw std::runtime_error("keyward: CredDeleteW failed for '" + name + "' (" + errorText(err) +
                              ")");
   }
+}
+
+std::vector<std::string> WindowsCredentialStore::list() {
+  // Enumerate only our own items via the wildcard filter "keyward:<app>:*",
+  // then strip the namespace prefix to recover the caller's names.
+  const std::string prefix = targetName(app_, "");  // "keyward:<app>:"
+  const std::wstring filter = toWide(prefix + "*");
+  DWORD count = 0;
+  PCREDENTIALW* creds = nullptr;
+  if (!CredEnumerateW(filter.c_str(), 0, &count, &creds)) {
+    const DWORD err = GetLastError();
+    if (err == ERROR_NOT_FOUND) return {};  // no matching credentials — an empty store
+    throw std::runtime_error("keyward: CredEnumerateW failed (" + errorText(err) + ")");
+  }
+  std::vector<std::string> names;
+  names.reserve(count);
+  for (DWORD i = 0; i < count; ++i) {
+    const std::string target = fromWide(creds[i]->TargetName);
+    if (target.starts_with(prefix)) names.push_back(target.substr(prefix.size()));
+  }
+  CredFree(creds);
+  return names;
 }
 
 }  // namespace keyward

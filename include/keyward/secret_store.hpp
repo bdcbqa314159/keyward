@@ -1,6 +1,8 @@
 #pragma once
 #include <optional>
+#include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace keyward {
 
@@ -15,6 +17,14 @@ class SecretStore {
   virtual void remove(const std::string& name) = 0;
   // Human-readable location (a path or "macOS Keychain") for status output.
   virtual std::string location() const = 0;
+
+  // Names of every secret in this store (the keys you'd pass to get), not the
+  // values. Powers listing / a picker UI (e.g. the TUI). NOT pure: a backend
+  // that can't enumerate inherits this fail-loud default and THROWS, rather than
+  // silently returning an incomplete list that would hide real credentials.
+  virtual std::vector<std::string> list() {
+    throw std::logic_error("keyward: list() is not supported by this SecretStore backend");
+  }
 };
 
 }  // namespace keyward

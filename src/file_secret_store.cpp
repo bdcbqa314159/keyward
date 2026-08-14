@@ -73,4 +73,11 @@ void FileSecretStore::remove(const std::string& name) {
   writeAll(path_, out);
 }
 
+std::vector<std::string> FileSecretStore::list() {
+  std::vector<std::string> names;
+  for (const auto& [k, v] : readAll(path_))
+    if (!v.empty()) names.push_back(k);  // empty value == absent, matching get()
+  return names;
+}
+
 }  // namespace keyward

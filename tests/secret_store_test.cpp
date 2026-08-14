@@ -2,8 +2,10 @@
 // (the macOS Keychain backend is exercised manually — it prompts).
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <memory>
+#include <vector>
 
 #include "keyward/fallback_secret_store.hpp"
 #include "keyward/file_secret_store.hpp"
@@ -38,6 +40,26 @@ TEST(FileSecretStore, RoundTrip) {
   const auto perms = fs::status(p).permissions();
   EXPECT_EQ(perms & (fs::perms::group_all | fs::perms::others_all), fs::perms::none);
 #endif
+
+  fs::remove_all(p.parent_path(), ec);
+}
+
+TEST(FileSecretStore, ListsStoredNames) {
+  const fs::path p = fs::temp_directory_path() / "keyward_test_list" / "credentials";
+  std::error_code ec;
+  fs::remove_all(p.parent_path(), ec);
+
+  FileSecretStore s(p);
+  EXPECT_TRUE(s.list().empty());  // nothing stored yet
+
+  s.set("alpha", "1");
+  s.set("beta", "2");
+  s.remove("alpha");  // removed names must not appear
+
+  const std::vector<std::string> names = s.list();
+  EXPECT_EQ(names.size(), 1u);
+  EXPECT_NE(std::find(names.begin(), names.end(), "beta"), names.end());
+  EXPECT_EQ(std::find(names.begin(), names.end(), "alpha"), names.end());
 
   fs::remove_all(p.parent_path(), ec);
 }
