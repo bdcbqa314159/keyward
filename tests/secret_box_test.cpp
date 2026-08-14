@@ -1,11 +1,13 @@
-// Oracle for Task 3 — passphrase-based seal/unseal (Argon2 + XChaCha20-Poly1305,
-// via the vendored Monocypher). Make it green by implementing seal() and
-// unseal() in src/secret_box.cpp. Don't edit this file to pass.
+// seal/unseal round-trip tests (Argon2 + XChaCha20-Poly1305 via Monocypher).
+// unseal() returns the recovered plaintext in a Secret (secure memory), so value
+// checks read it via ->view().
 #include "keyward/secret_box.hpp"
 
 #include <gtest/gtest.h>
 
 #include <string>
+
+#include "keyward/secret.hpp"
 
 using keyward::seal;
 using keyward::unseal;
@@ -14,7 +16,7 @@ TEST(SecretBox, RoundTrips) {
   auto blob = seal("hunter2", "correct horse battery staple");
   auto out = unseal(blob, "correct horse battery staple");
   ASSERT_TRUE(out.has_value());
-  EXPECT_EQ(*out, "hunter2");
+  EXPECT_EQ(out->view(), "hunter2");
 }
 
 TEST(SecretBox, WrongPassphraseFails) {
@@ -33,7 +35,7 @@ TEST(SecretBox, EmptyPlaintextRoundTrips) {
   auto blob = seal("", "pw");
   auto out = unseal(blob, "pw");
   ASSERT_TRUE(out.has_value());
-  EXPECT_EQ(*out, "");
+  EXPECT_EQ(out->view(), "");
 }
 
 TEST(SecretBox, SaltAndNonceAreFresh) {
