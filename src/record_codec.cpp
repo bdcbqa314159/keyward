@@ -19,10 +19,15 @@ uint32_t get_u32(std::string_view blob, std::size_t i) {
          (static_cast<uint32_t>(static_cast<unsigned char>(blob[i + 2])) << 8) |
          (static_cast<uint32_t>(static_cast<unsigned char>(blob[i + 3])));
 }
+
+// The first byte of every encoded record. Bump on any wire-format change so old
+// or foreign blobs are rejected up front rather than silently mis-parsed.
+constexpr unsigned char kFormatVersion = 1;
 }  // namespace
 
 std::string encode_fields(const Fields& fields) {
   std::string out{};
+  out.push_back(static_cast<char>(kFormatVersion));  // version byte first
   for (const Field& f : fields) {
     put_u32(out, f.name.size());
     out += f.name;
@@ -33,8 +38,11 @@ std::string encode_fields(const Fields& fields) {
 }
 
 std::optional<Fields> decode_fields(std::string_view blob) {
+  // First byte is the format version; reject an empty or unrecognised blob.
+  if (blob.empty() || static_cast<unsigned char>(blob[0]) != kFormatVersion) return std::nullopt;
+
   Fields out;
-  std::size_t i{};
+  std::size_t i{1};  // start after the version byte
   while (i < blob.size()) {
     if (blob.size() - i < 4) return std::nullopt;
     uint32_t name_len = get_u32(blob, i);
