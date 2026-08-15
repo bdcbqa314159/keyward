@@ -189,3 +189,25 @@ if(KEYWARD_BUILD_TESTS)
     gtest_discover_tests(tui_prompter_tests)
   endif()
 endif()
+
+# --- fuzzers (opt-in; libFuzzer) ------------------------------------------
+# The parsers take attacker-controlled bytes, so coverage-guided fuzzing is worth
+# having. Off by default. NOTE: needs a Clang that ships the libFuzzer runtime —
+# Apple's clang has the flag but NOT the runtime, so use Homebrew LLVM. Configure
+# a DEDICATED build:
+#   cmake -S . -B build/fuzz -DKEYWARD_BUILD_FUZZERS=ON -DKEYWARD_BUILD_TESTS=OFF -DKEYWARD_BUILD_TUI=OFF \
+#     -DCMAKE_C_COMPILER=$(brew --prefix llvm)/bin/clang \
+#     -DCMAKE_CXX_COMPILER=$(brew --prefix llvm)/bin/clang++
+#   cmake --build build/fuzz
+#   ./build/fuzz/fuzz_decode_fields -max_total_time=60
+option(KEYWARD_BUILD_FUZZERS "Build libFuzzer harnesses for the parsers (Clang only)" OFF)
+if(KEYWARD_BUILD_FUZZERS)
+  # Coverage-instrument keyward for the fuzzer (this whole build is fuzz-only).
+  target_compile_options(keyward PRIVATE -fsanitize=fuzzer-no-link,address)
+  foreach(fuzz decode_fields unseal)
+    add_executable(fuzz_${fuzz} tests/fuzz/fuzz_${fuzz}.cpp)
+    target_link_libraries(fuzz_${fuzz} PRIVATE keyward)
+    target_compile_options(fuzz_${fuzz} PRIVATE -fsanitize=fuzzer,address)
+    target_link_options(fuzz_${fuzz} PRIVATE -fsanitize=fuzzer,address)
+  endforeach()
+endif()
