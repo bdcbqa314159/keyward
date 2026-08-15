@@ -61,3 +61,19 @@ TEST(RecordCodec, DroppedLastByteIsRejected) {
   blob.pop_back();
   EXPECT_FALSE(decode_fields(blob).has_value());
 }
+
+TEST(RecordCodec, BlobStartsWithVersionByte) {
+  auto blob = encode_fields({{"k", "v"}});
+  ASSERT_FALSE(blob.empty());
+  EXPECT_EQ(static_cast<unsigned char>(blob[0]), 1u);  // current format version
+}
+
+TEST(RecordCodec, RejectsUnknownVersion) {
+  auto blob = encode_fields({{"email", "a@b.com"}, {"token", "abc"}});
+  blob[0] = static_cast<char>(0xFF);  // a version we don't understand
+  EXPECT_FALSE(decode_fields(blob).has_value());
+}
+
+TEST(RecordCodec, RejectsEmptyBlob) {
+  EXPECT_FALSE(decode_fields("").has_value());  // no version byte at all
+}
