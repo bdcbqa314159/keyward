@@ -22,6 +22,9 @@ zeroization, constant-time comparison, and the agent/IPC trust boundary.
 The security of the host OS keychain itself, and threats from a root / kernel / hypervisor /
 physical-memory attacker. keyward assumes a non-compromised OS and a single-user machine.
 
+For the full trust model — assets, assumptions, what is and isn't defended, and the honest
+current hardening status — see [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
+
 ## Supported versions
 
 Pre-1.0: only `main` is supported; fixes land there.
