@@ -40,6 +40,7 @@ add_library(keyward
   src/secret_box.cpp
   src/record_codec.cpp
   src/secure_memory.cpp
+  src/passphrase_authenticator.cpp
 )
 add_library(keyward::keyward ALIAS keyward)
 target_compile_features(keyward PUBLIC cxx_std_20)
@@ -191,6 +192,11 @@ if(KEYWARD_BUILD_TESTS)
   add_executable(authenticator_tests tests/authenticator_test.cpp)
   target_link_libraries(authenticator_tests PRIVATE keyward GTest::gtest_main)
   gtest_discover_tests(authenticator_tests)
+
+  # PassphraseAuthenticator + verifier (Argon2id, scripted-source oracle).
+  add_executable(passphrase_authenticator_tests tests/passphrase_authenticator_test.cpp)
+  target_link_libraries(passphrase_authenticator_tests PRIVATE keyward GTest::gtest_main)
+  gtest_discover_tests(passphrase_authenticator_tests)
 
   # Gap 3 — Windows Credential Manager backend. Red until the body is written
   # (skipped off Windows). Contract oracle for WindowsCredentialStore.
