@@ -33,6 +33,7 @@ add_library(keyward
   src/file_secret_store.cpp
   src/keychain_secret_store.cpp        # macOS-only body; compiles empty elsewhere
   src/windows_credential_store.cpp     # Windows-only body; compiles empty elsewhere
+  src/secret_service_store.cpp         # Linux+libsecret body; compiles empty elsewhere
   src/fallback_secret_store.cpp
   src/default_store.cpp
   src/random.cpp
@@ -62,6 +63,34 @@ endif()
 
 if(WIN32)
   target_link_libraries(keyward PUBLIC Advapi32)  # Credential Manager: CredWrite/Read/Delete
+endif()
+
+# --- optional Linux Secret Service backend (libsecret) --------------------
+# Unlike Security.framework and Advapi32, libsecret does NOT ship with the OS —
+# it's an optional system package. So we detect it rather than assume it, and a
+# clone without it still builds (Linux then falls through to the 0600 file
+# store). Install it with:
+#   sudo apt install libsecret-1-dev     # Debian / Ubuntu
+#   sudo dnf install libsecret-devel     # Fedora
+#   sudo pacman -S libsecret             # Arch
+# KEYWARD_HAVE_LIBSECRET is PUBLIC because the public header gates the class
+# declaration on it, so consumers must see the same answer we compiled with.
+# Includes and libs stay PRIVATE — <libsecret/secret.h> never reaches a public
+# header. SYSTEM includes stop glib's headers tripping our -Wall -Wextra
+# -Wpedantic (same trick as FTXUI below).
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  find_package(PkgConfig QUIET)
+  if(PkgConfig_FOUND)
+    pkg_check_modules(LIBSECRET QUIET libsecret-1)
+  endif()
+  if(LIBSECRET_FOUND)
+    target_compile_definitions(keyward PUBLIC KEYWARD_HAVE_LIBSECRET)
+    target_include_directories(keyward SYSTEM PRIVATE ${LIBSECRET_INCLUDE_DIRS})
+    target_link_libraries(keyward PRIVATE ${LIBSECRET_LINK_LIBRARIES})
+    message(STATUS "keyward: libsecret-1 ${LIBSECRET_VERSION} found — Secret Service backend ON")
+  else()
+    message(STATUS "keyward: libsecret-1 NOT found — Linux falls back to the 0600 file store")
+  endif()
 endif()
 
 # --- optional CLI prompter component --------------------------------------
@@ -169,6 +198,13 @@ if(KEYWARD_BUILD_TESTS)
   target_link_libraries(windows_credential_store_tests PRIVATE keyward GTest::gtest_main)
   gtest_discover_tests(windows_credential_store_tests)
 
+  # Gap 3 — Linux Secret Service backend. Red until the body is written (skips
+  # without libsecret, and on a box with no D-Bus session bus). Contract oracle
+  # for SecretServiceStore.
+  add_executable(secret_service_store_tests tests/secret_service_store_test.cpp)
+  target_link_libraries(secret_service_store_tests PRIVATE keyward GTest::gtest_main)
+  gtest_discover_tests(secret_service_store_tests)
+
   # Task 7 — Prompter protocol + Vault::ensure/revise (fake-prompter oracle).
   add_executable(prompter_tests tests/prompter_test.cpp)
   target_link_libraries(prompter_tests PRIVATE keyward GTest::gtest_main)
@@ -179,6 +215,13 @@ if(KEYWARD_BUILD_TESTS)
   add_executable(windows_vault_smoke_tests tests/windows_vault_smoke_test.cpp)
   target_link_libraries(windows_vault_smoke_tests PRIVATE keyward GTest::gtest_main)
   gtest_discover_tests(windows_vault_smoke_tests)
+
+  # Gap 3 stretch — end-to-end Vault-over-real-Secret-Service smoke test, plus
+  # the oracle for wiring defaultSecretStore to prefer the keyring on Linux.
+  # The round-trip is opt-in (KEYWARD_HOST_TESTS=1); the wiring check always runs.
+  add_executable(linux_vault_smoke_tests tests/linux_vault_smoke_test.cpp)
+  target_link_libraries(linux_vault_smoke_tests PRIVATE keyward GTest::gtest_main)
+  gtest_discover_tests(linux_vault_smoke_tests)
 
   # Task 8 — the CLI prompter (keyward::cli), stream-injected oracle.
   add_executable(cli_prompter_tests tests/cli_prompter_test.cpp)

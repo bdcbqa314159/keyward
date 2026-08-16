@@ -49,6 +49,13 @@ jobs:
           if [ -f CMakeLists.txt ]; then echo "cmake=true" >> "$GITHUB_OUTPUT";
           else echo "cmake=false" >> "$GITHUB_OUTPUT"; echo "No CMakeLists.txt yet — skipping build."; fi
 
+      # Secret Service backend deps. libsecret-1-dev must be present BEFORE
+      # configure (pkg-config detection happens there); gnome-keyring provides a
+      # live Secret Service for the contract test to run against.
+      - name: Install Linux Secret Service deps
+        if: runner.os == 'Linux' && steps.detect.outputs.cmake == 'true'
+        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev gnome-keyring
+
       - name: Configure
         if: steps.detect.outputs.cmake == 'true'
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -58,5 +65,19 @@ jobs:
         run: cmake --build build --config Release -j
 
       - name: Test
-        if: steps.detect.outputs.cmake == 'true'
+        if: steps.detect.outputs.cmake == 'true' && runner.os != 'Linux'
         run: ctest --test-dir build --build-config Release --output-on-failure
+
+      # A GitHub runner is headless: no session bus, no keyring daemon. Start
+      # both so the Secret Service contract test runs for real instead of
+      # skipping. The password on stdin must be NON-EMPTY: with an empty one
+      # gnome-keyring refuses to create the login keyring itself and delegates to
+      # the GTK prompter, which exits 1 with no display — every call then fails
+      # with 'Object does not exist at path .../collection/login'. The value is
+      # arbitrary; this keyring is thrown away with the runner.
+      - name: Test (Linux, with a live Secret Service)
+        if: steps.detect.outputs.cmake == 'true' && runner.os == 'Linux'
+        run: |
+          dbus-run-session -- bash -c '
+            echo -n "keyward-ci" | gnome-keyring-daemon --unlock --components=secrets --daemonize
+            ctest --test-dir build --build-config Release --output-on-failure'
