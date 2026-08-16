@@ -158,6 +158,11 @@ if(KEYWARD_BUILD_TESTS)
   target_link_libraries(vault_tests PRIVATE keyward GTest::gtest_main)
   gtest_discover_tests(vault_tests)
 
+  # Authenticator seam — Vault's access-time gate (fake-authenticator oracle).
+  add_executable(authenticator_tests tests/authenticator_test.cpp)
+  target_link_libraries(authenticator_tests PRIVATE keyward GTest::gtest_main)
+  gtest_discover_tests(authenticator_tests)
+
   # Gap 3 — Windows Credential Manager backend. Red until the body is written
   # (skipped off Windows). Contract oracle for WindowsCredentialStore.
   add_executable(windows_credential_store_tests tests/windows_credential_store_test.cpp)
