@@ -30,6 +30,60 @@ jobs:
           clang-format --version
           clang-format --dry-run -Werror "${files[@]}"
 
+  # The matrix jobs build Release, so nothing exercises the sanitizers. This one
+  # runs the whole suite under ASan + UBSan + LSan, on Linux because that's where
+  # the Secret Service backend (the only code doing manual C-API lifetime work)
+  # can actually run.
+  sanitizers:
+    name: sanitizers (ASan+UBSan+LSan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect CMake project
+        id: detect
+        shell: bash
+        run: |
+          if [ -f CMakeLists.txt ]; then echo "cmake=true" >> "$GITHUB_OUTPUT";
+          else echo "cmake=false" >> "$GITHUB_OUTPUT"; echo "No CMakeLists.txt yet — skipping."; fi
+
+      # Same pre-configure setup as the Linux matrix job: without these the
+      # Secret Service and interop tests skip, and they are precisely the ones
+      # worth sanitizing.
+      - name: Install Linux Secret Service deps
+        if: steps.detect.outputs.cmake == 'true'
+        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev gnome-keyring
+
+      - name: Install interop reference (Python keyring)
+        if: steps.detect.outputs.cmake == 'true'
+        run: python3 -m venv .venv && .venv/bin/pip install -q -r requirements-dev.txt
+
+      - name: Configure (asan preset)
+        if: steps.detect.outputs.cmake == 'true'
+        run: cmake --preset asan
+
+      - name: Build
+        if: steps.detect.outputs.cmake == 'true'
+        run: cmake --build build/asan -j
+
+      - name: Test under sanitizers
+        if: steps.detect.outputs.cmake == 'true'
+        env:
+          # UBSan RECOVERS by default: it prints a diagnostic and carries on, so
+          # the process still exits 0 and a green suite would hide real UB. The
+          # asan preset now passes -fno-sanitize-recover=all; this is the belt to
+          # that braces, and also covers anyone configuring without the preset.
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+          ASAN_OPTIONS: detect_leaks=1
+          # A runner's keyring is disposable, so run the host-gated Vault-over-
+          # real-keyring test here too — it is the deepest path through the
+          # backend and worth sanitizing.
+          KEYWARD_HOST_TESTS: "1"
+        run: |
+          dbus-run-session -- bash -c '
+            echo -n "keyward-ci" | gnome-keyring-daemon --unlock --components=secrets --daemonize
+            ctest --test-dir build/asan --output-on-failure'
+
   build:
     name: build & test (${{ matrix.os }})
     strategy:
