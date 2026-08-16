@@ -6,6 +6,7 @@
 #include "keyward/fallback_secret_store.hpp"
 #include "keyward/file_secret_store.hpp"
 #include "keyward/keychain_secret_store.hpp"
+#include "keyward/secret_service_store.hpp"
 #include "keyward/windows_credential_store.hpp"
 
 namespace fs = std::filesystem;
@@ -46,8 +47,16 @@ std::unique_ptr<SecretStore> defaultSecretStore(const std::string& app) {
   // just a read-only attribute, not a real ACL, so falling back to it would be a
   // silent downgrade. Fail closed instead (the backend throws on any error).
   return std::make_unique<WindowsCredentialStore>(app);
+#elif defined(__linux__) && defined(KEYWARD_HAVE_LIBSECRET)
+  // The user's keyring (namespaced to `app`) in front, mirroring macOS; the 0600
+  // file stays readable so an existing secret still works and migrates to the
+  // keyring on the next `set`. Unlike Windows we keep the fallback: a 0600 file
+  // on Linux IS a real permission bit, so it's a degraded store, not a fake one.
+  return std::make_unique<FallbackSecretStore>(
+      std::make_unique<SecretServiceStore>(app),
+      std::make_unique<FileSecretStore>(defaultStorePath(app)));
 #else
-  // TODO: Linux libsecret in front here; file store is the universal fallback.
+  // No native vault available (Linux without libsecret, BSD, anything else).
   return std::make_unique<FileSecretStore>(defaultStorePath(app));
 #endif
 }
