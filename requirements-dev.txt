@@ -6,3 +6,9 @@
 #   .venv/bin/clang-format -i include/keyward/*.hpp src/*.cpp tests/*.cpp
 #
 clang-format==18.1.8
+
+# Interop reference implementation. The Linux Secret Service interop test drives
+# `keyring` as the other side of the round trip: it writes a secret, keyward
+# reads it, and vice versa — pinning DESIGN.md's compatibility north star. On
+# Linux this resolves to keyring's SecretService backend (needs a session bus).
+keyring==25.7.0

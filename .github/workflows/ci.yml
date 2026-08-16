@@ -56,6 +56,13 @@ jobs:
         if: runner.os == 'Linux' && steps.detect.outputs.cmake == 'true'
         run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev gnome-keyring
 
+      # Python `keyring` is the other side of the Secret Service interop test.
+      # Must exist BEFORE configure: CMake locates the CLI with find_program and
+      # bakes its path in, so a venv created later would leave the test skipping.
+      - name: Install interop reference (Python keyring)
+        if: runner.os == 'Linux' && steps.detect.outputs.cmake == 'true'
+        run: python3 -m venv .venv && .venv/bin/pip install -q -r requirements-dev.txt
+
       - name: Configure
         if: steps.detect.outputs.cmake == 'true'
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release

@@ -211,6 +211,25 @@ if(KEYWARD_BUILD_TESTS)
   target_link_libraries(secret_service_store_tests PRIVATE keyward GTest::gtest_main)
   gtest_discover_tests(secret_service_store_tests)
 
+  # Gap 3 interop — keyward <-> Python `keyring` over the same Secret Service,
+  # pinning DESIGN.md's compatibility north star. Needs the pinned keyring from
+  # requirements-dev.txt in the local .venv (or one on PATH); without it the
+  # test compiles to a skip that says how to get it.
+  find_program(KEYWARD_KEYRING_CLI keyring
+    HINTS ${CMAKE_CURRENT_SOURCE_DIR}/.venv/bin
+    NO_CMAKE_SYSTEM_PATH)
+  add_executable(secret_service_interop_tests tests/secret_service_interop_test.cpp)
+  target_link_libraries(secret_service_interop_tests PRIVATE keyward GTest::gtest_main)
+  if(KEYWARD_KEYRING_CLI)
+    target_compile_definitions(secret_service_interop_tests
+      PRIVATE KEYWARD_KEYRING_CLI="${KEYWARD_KEYRING_CLI}")
+    message(STATUS "keyward: keyring CLI at ${KEYWARD_KEYRING_CLI} — interop tests ON")
+  else()
+    message(STATUS "keyward: no keyring CLI — interop tests SKIP "
+                   "(.venv/bin/pip install -r requirements-dev.txt)")
+  endif()
+  gtest_discover_tests(secret_service_interop_tests)
+
   # Task 7 — Prompter protocol + Vault::ensure/revise (fake-prompter oracle).
   add_executable(prompter_tests tests/prompter_test.cpp)
   target_link_libraries(prompter_tests PRIVATE keyward GTest::gtest_main)

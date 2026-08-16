@@ -154,3 +154,33 @@ and the TUI app.
 
 **Compatibility north star:** a secret written by Python `keyring` is readable
 by keyward and vice versa, green on all three OSes.
+
+Status: **Linux done** (`tests/secret_service_interop_test.cpp`, gated on the
+pinned `keyring` in `.venv`). The Secret Service backend stores exactly the two
+attributes `keyring` matches on — `service` (keyward's app namespace) and
+`username` (the secret name) — and does not match the schema name, so items are
+mutually visible. Reads, writes, cross-tool overwrite in both directions,
+removal and `list()` are all covered.
+
+The interop contract lives at the **`SecretStore`** layer: raw bytes under
+(app, name). `Vault`'s typed `save<T>`/`load<T>` puts its own length-prefixed
+record format *inside* that value, so a `keyring`-written plain password is a
+readable secret but not a decodable keyward *record* — as intended.
+
+**Duplicate items are a fact of this bus, not a bug we can avoid.** Secret
+Service replaces an item only on an *exact* attribute-set match, and `keyring`
+stores a third attribute (`application`) that we deliberately don't — so a
+`keyring` write over a keyward item leaves two items, one stale. Consequences,
+all covered by the interop test:
+
+- `get` reads the most recently modified item, so the caller sees the current
+  value rather than an arbitrary one.
+- `modified` has **one-second** granularity. If the newest timestamp is tied
+  between items holding *different* values, keyward cannot tell which is
+  current and **throws** rather than risk returning a superseded secret —
+  fail-closed, as the invariant requires.
+- `set` clears before storing, so any keyward write collapses the duplicates.
+
+macOS and Windows interop are unverified; `keyring` uses `SecItem` with
+(service, account) there and a `service@username` target name on Windows, so
+the mapping needs checking before either can be claimed.
