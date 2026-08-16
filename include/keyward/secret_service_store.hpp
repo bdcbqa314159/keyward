@@ -14,11 +14,16 @@ namespace keyward {
 // libsecret-1-dev still builds and falls through to the 0600 file store.
 #if defined(__linux__) && defined(KEYWARD_HAVE_LIBSECRET)
 // Linux Secret Service backend (freedesktop.org Secret Service API, reached via
-// libsecret): one stored item per secret, attributed "keyward:<app>:<name>".
-// The provider is the user's keyring daemon (gnome-keyring, KWallet, KeePassXC
-// with Secret Service enabled) — it encrypts at rest with a key derived from the
-// login password, so we don't roll crypto. Only declared when libsecret is
-// present; the body compiles empty otherwise.
+// libsecret): one stored item per secret, identified by the attribute pair
+// {service=<app>, username=<name>}. The provider is the user's keyring daemon
+// (gnome-keyring, KWallet, KeePassXC with Secret Service enabled) — it encrypts
+// at rest with a key derived from the login password, so we don't roll crypto.
+// Only declared when libsecret is present; the body compiles empty otherwise.
+//
+// Those two attribute names are Python `keyring`'s, deliberately: the bus is
+// shared, so a secret written by keyring is readable here and vice versa
+// (DESIGN.md's compatibility north star). See src/ for why the set is exactly
+// two attributes and why the schema name is not matched.
 class SecretServiceStore : public SecretStore {
  public:
   explicit SecretServiceStore(std::string app = "keyward");
