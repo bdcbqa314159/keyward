@@ -70,6 +70,32 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
+### Sanitizers
+
+CI runs the whole suite under ASan + UBSan + LSan on Linux. Locally:
+
+```bash
+cmake --preset asan && cmake --build build/asan -j
+ASAN_OPTIONS=detect_leaks=1 ctest --test-dir build/asan --output-on-failure
+```
+
+The preset passes `-fno-sanitize-recover=all` on purpose: UBSan otherwise just
+prints a diagnostic and lets the process exit 0, so a finding would leave the
+suite green.
+
+### Optional Linux extras
+
+Some tests need system packages and skip (loudly) without them:
+
+```bash
+sudo apt install libsecret-1-dev              # Secret Service backend + its tests
+python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+```
+
+The venv provides the pinned `clang-format` and the `keyring` used as the other
+side of the Secret Service interop test. Configure output tells you which
+optional pieces are on.
+
 ## Consume via FetchContent
 
 ```cmake
