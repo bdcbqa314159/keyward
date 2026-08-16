@@ -10,6 +10,7 @@
 #include "keyward/record.hpp"         // encode_fields / decode_fields
 #include "keyward/schema.hpp"         // to_fields / from_fields
 #include "keyward/secret_store.hpp"   // SecretStore
+#include "keyward/secure_memory.hpp"  // secure_zero
 
 namespace keyward {
 
@@ -47,6 +48,8 @@ class Vault {
     Fields fields = to_fields(record);
     std::string blob = encode_fields(fields);
     store_->set(service, blob);
+    secure_zero(blob.data(), blob.size());  // don't leave the serialized secret in freed heap
+    wipe_fields(fields);
   }
 
   // Authorize, then fetch `service` and deserialize (bytes -> Fields -> T).
@@ -86,14 +89,25 @@ class Vault {
   }
 
  private:
+  // Overwrite the plaintext values of a decoded/gathered Fields list so they
+  // don't linger in freed heap. Names aren't secret, so only values are wiped.
+  static void wipe_fields(Fields& fields) {
+    for (Field& f : fields) secure_zero(f.value.data(), f.value.size());
+  }
+
   // The un-gated core of load — fetch + decode + typed rebuild. Callers gate.
+  // The transient plaintext (the raw blob, the decoded Fields) is wiped once the
+  // typed record is built; the returned record is the caller's to hold.
   template <class T>
   std::optional<T> load_stored(const std::string& service) {
     std::optional<std::string> stored = store_->get(service);
     if (!stored) return std::nullopt;
     std::optional<Fields> fields = decode_fields(*stored);
+    secure_zero(stored->data(), stored->size());  // raw blob copy
     if (!fields) return std::nullopt;
-    return from_fields<T>(*fields);
+    std::optional<T> record = from_fields<T>(*fields);
+    wipe_fields(*fields);  // decoded plaintext transients
+    return record;
   }
 
   // Build prompt fields from T's schema (name + Sensitive flag, optionally
@@ -112,8 +126,13 @@ class Vault {
     Fields collected;
     for (const PromptField& f : fields) collected.push_back({f.name, f.value});
     std::optional<T> record = from_fields<T>(collected);
-    if (!record) return std::nullopt;  // prompter returned an incomplete set
 
+    // Wipe the gathered/serialized plaintext transients (the record is the
+    // caller's to hold; save() wipes its own copies).
+    wipe_fields(collected);
+    for (PromptField& f : fields) secure_zero(f.value.data(), f.value.size());
+
+    if (!record) return std::nullopt;  // prompter returned an incomplete set
     save<T>(service, *record);
     return record;
   }
