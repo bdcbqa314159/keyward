@@ -124,15 +124,17 @@ jobs:
           ./build/fuzz/fuzz_decode_fields build/fuzz/found tests/fuzz/corpus/decode_fields \
             -max_total_time=60 -print_final_stats=1
 
-      # unseal is REPLAYED, not fuzzed, and that is deliberate. It runs Argon2id
-      # over a 100 MB work buffer for every input past the 56-byte header, which
-      # measured at 12 executions in 21 seconds once seeded with valid blobs —
-      # not fuzzing, just a slow way to look busy. Replaying the corpus still
-      # catches a regression that crashes on a known-interesting input, which is
-      # the honest value available at production KDF cost. See docs/THREAT_MODEL.md.
-      - name: Replay unseal corpus
+      # Fuzzable at all only because this build tree lowers the Argon2 cost
+      # (KEYWARD_FUZZ_CHEAP_KDF, set only under KEYWARD_BUILD_FUZZERS). At
+      # production cost this managed 12 executions in 21 seconds; it now runs at
+      # ~6.5k/s over the same branches. See src/secret_box.cpp for why the
+      # reduction does not change what is covered.
+      - name: Fuzz unseal
         if: steps.detect.outputs.cmake == 'true'
-        run: ./build/fuzz/fuzz_unseal tests/fuzz/corpus/unseal -runs=0
+        run: |
+          mkdir -p build/fuzz/found-unseal
+          ./build/fuzz/fuzz_unseal build/fuzz/found-unseal tests/fuzz/corpus/unseal \
+            -max_total_time=60 -print_final_stats=1
 
       # A crash/leak/timeout writes its reproducer to the working directory;
       # without this the input that triggered it dies with the runner.

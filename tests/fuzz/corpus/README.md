@@ -24,7 +24,14 @@ units per minute** than starting from nothing (188 → 294 in a 20s run).
 Real sealed blobs plus the two inputs that sit either side of the 56-byte header
 boundary the parser keys on (`header_only`, `header_minus_one`).
 
-These seeds make throughput **collapse** — 12 executions in 21 seconds, against
-~17k/s for `decode_fields` — because every input past the header pays a full
-Argon2id over a 100 MB work buffer. That is why CI replays this corpus
-(`-runs=0`) rather than fuzzing it. See `docs/THREAT_MODEL.md`.
+At production KDF cost these seeds make throughput **collapse** — 12 executions
+in 21 seconds, against ~17k/s for `decode_fields` — because every input past the
+header pays a full Argon2id over a 100 MB work buffer. Fuzz builds therefore
+compile a token Argon2 cost (`KEYWARD_FUZZ_CHEAP_KDF`, set only under
+`KEYWARD_BUILD_FUZZERS`), which brings it to ~6.5k/s over the same branches.
+
+One consequence to know: these blobs are sealed at *production* cost, so their
+MAC will not verify in a fuzz build. The fuzzer covers parse-and-reject, not
+parse-and-accept — which is what it would cover anyway, since no mutation gets
+past a 128-bit MAC. The accept path is covered by `secret_box_tests` in a normal
+build. See `docs/THREAT_MODEL.md`.

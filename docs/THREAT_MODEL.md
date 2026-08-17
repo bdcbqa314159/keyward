@@ -64,14 +64,19 @@ keyward to store and retrieve.
   a silent no-op that would tell a caller a credential was revoked when it was
   not. Regression test: `SecretServiceLocked.Isolated`, which runs against a
   throwaway keyring because locking a collection is a global act.
-- ⚠️ **`unseal` is effectively unfuzzed.** It is the more security-critical of
-  the two parsers — it eats fully attacker-controlled ciphertext — but it runs
-  Argon2id over a 100 MB work buffer for every input past the 56-byte header.
-  Measured: **12 executions in 21 seconds** when seeded with valid blobs, versus
-  ~17k/s for `decode_fields`. CI therefore only replays its seed corpus, which
-  catches regressions on known inputs but explores nothing new. Closing this
-  needs reduced KDF parameters in fuzz-only builds; the parse and AEAD branches
-  are identical either way, so the reduction would not weaken what is tested.
+- ✅ **`unseal` is fuzzed in CI too.** It eats fully attacker-controlled
+  ciphertext, so it matters more than `decode_fields`. It was previously
+  unfuzzable at production KDF cost — Argon2id over a 100 MB buffer for every
+  input past the 56-byte header, measured at 12 executions in 21 seconds. Fuzz
+  builds now compile a token Argon2 cost (`KEYWARD_FUZZ_CHEAP_KDF`, set only
+  under `KEYWARD_BUILD_FUZZERS`), giving ~6.5k exec/s over the *same* parse,
+  length-arithmetic and AEAD-verify branches. Production builds on every OS are
+  byte-identical with or without that option — verified by comparing object code.
+  First deep run: 795,416 executions, no crashes.
+  Note the seed blobs are sealed at production cost, so their MAC does not verify
+  in a fuzz build; the fuzzer therefore covers parse-and-reject, not
+  parse-and-accept. Mutation could never reach accept anyway (128-bit MAC), and
+  the accept path is covered by `secret_box_tests` in a normal build.
 - **Not independently audited.** Do not entrust other people's high-value secrets
   to keyward until it has been reviewed.
 
