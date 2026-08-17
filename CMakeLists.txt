@@ -310,18 +310,37 @@ endif()
 # point it at one that has them, e.g.
 #   -DCMAKE_CXX_FLAGS=--gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/15
 #
-# Seed corpora live in tests/fuzz/corpus/<harness>/ — pass the directory as the
-# first argument. For decode_fields the seeds are worth ~55% more new coverage
-# units per minute. For unseal they make throughput COLLAPSE (12 execs in 21s),
-# because every seeded input is past the 56-byte header and so pays a full
-# Argon2id over a 100 MB work buffer. CI therefore fuzzes decode_fields and only
-# REPLAYS unseal's corpus (-runs=0). Meaningful unseal fuzzing needs cheaper KDF
-# parameters in fuzz builds — deliberately not done, since that means touching
-# crypto code.
+# Seed corpora live in tests/fuzz/corpus/<harness>/ — pass a scratch dir first
+# (libFuzzer writes discoveries there), the seed dir second. For decode_fields
+# the seeds are worth ~55% more new coverage units per minute.
+#
+# This build tree also weakens the Argon2 cost (KEYWARD_FUZZ_CHEAP_KDF, below).
+# Without it unseal managed 12 executions in 21 seconds, because every seeded
+# input is past the 56-byte header and pays a full Argon2id over 100 MB; with it,
+# ~6.5k/s. That is why this tree must never be the one you ship or test.
 option(KEYWARD_BUILD_FUZZERS "Build libFuzzer harnesses for the parsers (Clang only)" OFF)
 if(KEYWARD_BUILD_FUZZERS)
+  # This build tree's crypto is DELIBERATELY WEAKENED (see below), so it must not
+  # also produce the test suite: a green run there would be green against a token
+  # KDF. The documented fuzz configure already passes -DKEYWARD_BUILD_TESTS=OFF;
+  # this makes forgetting it an error instead of a false pass.
+  if(KEYWARD_BUILD_TESTS)
+    message(FATAL_ERROR
+      "KEYWARD_BUILD_FUZZERS weakens the Argon2 cost for throughput; it cannot share a "
+      "build tree with the tests. Configure a dedicated one with -DKEYWARD_BUILD_TESTS=OFF.")
+  endif()
+
   # Coverage-instrument keyward for the fuzzer (this whole build is fuzz-only).
   target_compile_options(keyward PRIVATE -fsanitize=fuzzer-no-link,address)
+
+  # Argon2 at production cost makes unseal() unfuzzable: 100 MB of work memory
+  # per input past the 56-byte header, measured at 12 executions in 21 seconds.
+  # The KDF cost is orthogonal to the branches a fuzzer explores (header parse,
+  # length arithmetic, AEAD verify), so this trades cost for throughput without
+  # changing what is covered. PRIVATE, and only inside this if(), so no normal
+  # configure on any OS ever sees it — a Release build is byte-identical with or
+  # without this block. src/secret_box.cpp also emits a #warning when it is on.
+  target_compile_definitions(keyward PRIVATE KEYWARD_FUZZ_CHEAP_KDF)
   foreach(fuzz decode_fields unseal)
     add_executable(fuzz_${fuzz} tests/fuzz/fuzz_${fuzz}.cpp)
     target_link_libraries(fuzz_${fuzz} PRIVATE keyward)
