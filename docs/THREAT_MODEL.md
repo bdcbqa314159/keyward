@@ -77,6 +77,12 @@ keyward to store and retrieve.
   in a fuzz build; the fuzzer therefore covers parse-and-reject, not
   parse-and-accept. Mutation could never reach accept anyway (128-bit MAC), and
   the accept path is covered by `secret_box_tests` in a normal build.
+- ⚠️ **The file store writes plaintext.** `0600` is access control, not
+  encryption — anyone who gets the file (backup, sync folder, disk image, support
+  bundle) gets the secrets. `seal`/`unseal` exist and are fuzzed but have no
+  callers. It is the **sole** tier on Linux without libsecret and on BSD; a
+  drain-only legacy tier behind the keyring elsewhere; unused on Windows. Scoped
+  in [FILE_ENCRYPTION.md](FILE_ENCRYPTION.md), blocked on where the key comes from.
 - **Not independently audited.** Do not entrust other people's high-value secrets
   to keyward until it has been reviewed.
 
