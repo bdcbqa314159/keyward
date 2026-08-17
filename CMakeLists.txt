@@ -41,6 +41,7 @@ add_library(keyward
   src/record_codec.cpp
   src/secure_memory.cpp
   src/passphrase_authenticator.cpp
+  src/biometric_authenticator.cpp  # Objective-C++ on Apple (see -x below); plain C++ elsewhere
 )
 add_library(keyward::keyward ALIAS keyward)
 target_compile_features(keyward PUBLIC cxx_std_20)
@@ -60,6 +61,11 @@ endif()
 
 if(APPLE)
   target_link_libraries(keyward PUBLIC "-framework Security" "-framework CoreFoundation")
+  # Biometric backend: LocalAuthentication (Touch ID). The source is a .cpp, so
+  # compile just this one as Objective-C++ here (plain C++ everywhere else).
+  set_source_files_properties(src/biometric_authenticator.cpp PROPERTIES
+    COMPILE_OPTIONS "-x;objective-c++")
+  target_link_libraries(keyward PUBLIC "-framework LocalAuthentication" "-framework Foundation")
 endif()
 
 if(WIN32)
@@ -197,6 +203,11 @@ if(KEYWARD_BUILD_TESTS)
   add_executable(passphrase_authenticator_tests tests/passphrase_authenticator_test.cpp)
   target_link_libraries(passphrase_authenticator_tests PRIVATE keyward GTest::gtest_main)
   gtest_discover_tests(passphrase_authenticator_tests)
+
+  # FallbackAuthenticator policy (fakes) + a link/availability smoke of Biometric.
+  add_executable(fallback_authenticator_tests tests/fallback_authenticator_test.cpp)
+  target_link_libraries(fallback_authenticator_tests PRIVATE keyward GTest::gtest_main)
+  gtest_discover_tests(fallback_authenticator_tests)
 
   # Gap 3 — Windows Credential Manager backend. Red until the body is written
   # (skipped off Windows). Contract oracle for WindowsCredentialStore.
