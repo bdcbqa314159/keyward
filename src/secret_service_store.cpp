@@ -4,6 +4,7 @@
 
 #include <libsecret/secret.h>
 
+#include <cstddef>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -124,12 +125,20 @@ std::optional<std::string> SecretServiceStore::get(const std::string& name) {
   // LOAD_SECRETS here (unlike list(), which needs attributes only) because the
   // caller is asking for exactly this secret, and we must compare values to
   // tell a harmless duplicate from a genuine conflict.
+  //
+  // UNLOCK because a locked collection still returns matching items — with their
+  // ATTRIBUTES readable but their secrets absent. Without this we silently read
+  // a locked keyring as "no such secret", and on Linux defaultSecretStore puts a
+  // plaintext file store behind us, so that miss would fall through and downgrade
+  // the tier. Unlocking may put an OS prompt in front of the user; that is the
+  // OS asking for consent, and is the intended behaviour.
   AttrsPtr attrs = attributesFor(app_, &name);
   GError* rawErr = nullptr;
   ItemListPtr items(secret_service_search_sync(
       nullptr, keywardSchema(), attrs.get(),
-      static_cast<SecretSearchFlags>(SECRET_SEARCH_ALL | SECRET_SEARCH_LOAD_SECRETS), nullptr,
-      &rawErr));
+      static_cast<SecretSearchFlags>(SECRET_SEARCH_ALL | SECRET_SEARCH_UNLOCK |
+                                     SECRET_SEARCH_LOAD_SECRETS),
+      nullptr, &rawErr));
   ErrorPtr err(rawErr);
   // An error is a failure; laundering it into "not found" would be the silent
   // downgrade the fail-closed invariant forbids. No error and no items is a miss.
@@ -143,11 +152,14 @@ std::optional<std::string> SecretServiceStore::get(const std::string& name) {
   std::optional<std::string> best;
   guint64 bestAt = 0;
   bool ambiguous = false;
+  std::size_t matched = 0, readable = 0;
   for (GList* node = items.get(); node != nullptr; node = node->next) {
     auto* item = static_cast<SecretItem*>(node->data);
+    ++matched;
     ValuePtr value(secret_item_get_secret(item));
     std::optional<std::string> bytes = valueBytes(value.get());
-    if (!bytes) continue;
+    if (!bytes) continue;  // present but unreadable — still locked (see below)
+    ++readable;
     const guint64 at = secret_item_get_modified(item);
     if (!best || at > bestAt) {
       best = std::move(bytes);
@@ -156,6 +168,15 @@ std::optional<std::string> SecretServiceStore::get(const std::string& name) {
     } else if (at == bestAt && *bytes != *best) {
       ambiguous = true;  // same timestamp, different value — undecidable
     }
+  }
+  // The secret EXISTS — we matched items — but none would give up its value,
+  // so the collection is still locked (unlock declined, or no prompter, as in a
+  // headless session). Returning nullopt here would report "no such secret" for
+  // a secret that is demonstrably present, and would let the caller fall through
+  // to a weaker store or overwrite the real entry. Refuse instead.
+  if (matched > 0 && readable == 0) {
+    throw std::runtime_error("keyward: '" + name + "' exists in the Secret Service but its value " +
+                             "could not be read — the keyring is locked (unlock it and retry)");
   }
   if (ambiguous) {
     throw std::runtime_error("keyward: '" + name +
@@ -197,9 +218,28 @@ void SecretServiceStore::remove(const std::string& name) {
   GError* rawErr = nullptr;
   // Returns FALSE both when nothing matched and when the call failed — the
   // GError is what distinguishes them. A missing name is a no-op, not an error.
-  secret_service_clear_sync(nullptr, keywardSchema(), attrs.get(), nullptr, &rawErr);
+  const gboolean removed =
+      secret_service_clear_sync(nullptr, keywardSchema(), attrs.get(), nullptr, &rawErr);
   ErrorPtr err(rawErr);
   if (err) fail("clear for '" + name + "'", err);
+  if (removed) return;
+
+  // FALSE with NO error is ambiguous, and the benign reading is the dangerous
+  // one. On a LOCKED collection clear removes nothing, sets no error, and
+  // returns FALSE — identical to a genuine miss. Treating that as "already
+  // gone" tells a caller revoking a credential that it was deleted while it sits
+  // in the keyring intact. Attributes stay readable while locked, so a search
+  // separates the two: still matched => we were refused, not idempotent.
+  rawErr = nullptr;
+  ItemListPtr survivors(secret_service_search_sync(nullptr, keywardSchema(), attrs.get(),
+                                                   SECRET_SEARCH_ALL, nullptr, &rawErr));
+  ErrorPtr searchErr(rawErr);
+  if (searchErr) fail("post-clear check for '" + name + "'", searchErr);
+  if (survivors) {
+    throw std::runtime_error("keyward: '" + name +
+                             "' could not be removed from the Secret Service — the keyring is "
+                             "locked (unlock it and retry)");
+  }
 }
 
 std::vector<std::string> SecretServiceStore::list() {

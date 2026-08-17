@@ -52,7 +52,7 @@ jobs:
       # worth sanitizing.
       - name: Install Linux Secret Service deps
         if: steps.detect.outputs.cmake == 'true'
-        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev gnome-keyring
+        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev gnome-keyring libglib2.0-bin
 
       - name: Install interop reference (Python keyring)
         if: steps.detect.outputs.cmake == 'true'
@@ -172,7 +172,7 @@ jobs:
       # live Secret Service for the contract test to run against.
       - name: Install Linux Secret Service deps
         if: runner.os == 'Linux' && steps.detect.outputs.cmake == 'true'
-        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev gnome-keyring
+        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev gnome-keyring libglib2.0-bin
 
       # Python `keyring` is the other side of the Secret Service interop test.
       # Must exist BEFORE configure: CMake locates the CLI with find_program and

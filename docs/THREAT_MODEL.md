@@ -56,6 +56,14 @@ keyward to store and retrieve.
   Service via libsecret ✅ (`0600` file remains the fallback everywhere).
 - ✅ `decode_fields` is fuzzed in CI on every PR (libFuzzer + ASan, seeded corpus
   in `tests/fuzz/corpus/`, ~17k exec/s).
+- ✅ **A locked Linux keyring fails closed.** A locked collection still answers
+  searches — attributes readable, secrets withheld — so the backend used to read
+  it as "no such secret" and, through `defaultSecretStore`'s fallback chain, drop
+  to the plaintext file store. `get` now unlocks (prompting if the OS asks) and
+  throws if the value is still unreadable; `remove` verifies rather than trusting
+  a silent no-op that would tell a caller a credential was revoked when it was
+  not. Regression test: `SecretServiceLocked.Isolated`, which runs against a
+  throwaway keyring because locking a collection is a global act.
 - ⚠️ **`unseal` is effectively unfuzzed.** It is the more security-critical of
   the two parsers — it eats fully attacker-controlled ciphertext — but it runs
   Argon2id over a 100 MB work buffer for every input past the 56-byte header.

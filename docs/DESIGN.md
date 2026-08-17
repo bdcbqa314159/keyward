@@ -184,3 +184,17 @@ all covered by the interop test:
 macOS and Windows interop are unverified; `keyring` uses `SecItem` with
 (service, account) there and a `service@username` target name on Windows, so
 the mapping needs checking before either can be claimed.
+
+**Which Secret Service providers are covered.** Only **gnome-keyring** is tested
+— it is what CI runs and what the contract, interop and locked-keyring tests
+exercise. Any spec-compliant provider (KWallet, KeePassXC with Secret Service
+enabled) should serve keyward's *own* items, because they are stored and matched
+by attributes we control.
+
+Reading a provider's **native** entries is a different question and is out of
+scope. KeePassXC surfaces its own database entries under its field names, not
+ours — Python `keyring` carries a whole second attribute scheme for this
+(`{service: "Title", username: "UserName"}` versus the default
+`{service: "service", username: "username"}`). Supporting that would mean a
+configurable attribute scheme; not worth building against a provider we have no
+test coverage for, but the shape of the fix is known if someone asks for it.

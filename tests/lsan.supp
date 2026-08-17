@@ -1,0 +1,10 @@
+# LeakSanitizer suppressions — third-party only. Nothing in keyward belongs here;
+# if one of our own frames shows up in a leak report, fix the leak.
+#
+# libsecret allocates a SecretPrompt (via g_initable_new) when it tries to unlock
+# a locked collection, and leaks it when no prompter can be reached — which is
+# exactly the headless situation SecretServiceLocked.Isolated creates on purpose.
+# 8 bytes, once, inside libsecret; not reachable or fixable from our side.
+#
+#   #6 _secret_prompt_instance (libsecret-1.so.0)
+leak:_secret_prompt_instance
