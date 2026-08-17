@@ -10,3 +10,10 @@
 *.json  text
 *.yml   text
 CMakeLists.txt text
+
+# Fuzz seed corpora are RAW BYTES — sealed blobs and length-prefixed records.
+# text=auto would leave their handling to a heuristic, and one seed
+# (unseal/sealed_empty) contains a bare LF, so a Windows checkout could rewrite
+# it to CRLF and silently corrupt the seed. Mark them binary explicitly.
+tests/fuzz/corpus/** -text
+tests/fuzz/corpus/README.md text

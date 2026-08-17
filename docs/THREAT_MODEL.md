@@ -52,8 +52,18 @@ keyward to store and retrieve.
   stored record bytes and gathered prompt values — still pass through plain
   `std::string`. The exposure window is brief and in-process only, but it is not
   closed; the end-to-end wire-through is in progress.
-- Backends: macOS Keychain ✅, Windows Credential Manager ✅, Linux → `0600`-file
-  fallback (native libsecret in progress).
+- Backends: macOS Keychain ✅, Windows Credential Manager ✅, Linux Secret
+  Service via libsecret ✅ (`0600` file remains the fallback everywhere).
+- ✅ `decode_fields` is fuzzed in CI on every PR (libFuzzer + ASan, seeded corpus
+  in `tests/fuzz/corpus/`, ~17k exec/s).
+- ⚠️ **`unseal` is effectively unfuzzed.** It is the more security-critical of
+  the two parsers — it eats fully attacker-controlled ciphertext — but it runs
+  Argon2id over a 100 MB work buffer for every input past the 56-byte header.
+  Measured: **12 executions in 21 seconds** when seeded with valid blobs, versus
+  ~17k/s for `decode_fields`. CI therefore only replays its seed corpus, which
+  catches regressions on known inputs but explores nothing new. Closing this
+  needs reduced KDF parameters in fuzz-only builds; the parse and AEAD branches
+  are identical either way, so the reduction would not weaken what is tested.
 - **Not independently audited.** Do not entrust other people's high-value secrets
   to keyward until it has been reviewed.
 

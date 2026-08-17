@@ -272,7 +272,23 @@ endif()
 #     -DCMAKE_C_COMPILER=$(brew --prefix llvm)/bin/clang \
 #     -DCMAKE_CXX_COMPILER=$(brew --prefix llvm)/bin/clang++
 #   cmake --build build/fuzz
-#   ./build/fuzz/fuzz_decode_fields -max_total_time=60
+#   mkdir -p build/fuzz/found   # libFuzzer WRITES new units to the first dir;
+#   ./build/fuzz/fuzz_decode_fields build/fuzz/found \
+#     tests/fuzz/corpus/decode_fields -max_total_time=60   # seeds stay read-only
+#
+# On Linux use the system clang (CI does). If it fails to link with
+# "cannot find -lstdc++", clang picked a GCC install with no libstdc++ headers;
+# point it at one that has them, e.g.
+#   -DCMAKE_CXX_FLAGS=--gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/15
+#
+# Seed corpora live in tests/fuzz/corpus/<harness>/ — pass the directory as the
+# first argument. For decode_fields the seeds are worth ~55% more new coverage
+# units per minute. For unseal they make throughput COLLAPSE (12 execs in 21s),
+# because every seeded input is past the 56-byte header and so pays a full
+# Argon2id over a 100 MB work buffer. CI therefore fuzzes decode_fields and only
+# REPLAYS unseal's corpus (-runs=0). Meaningful unseal fuzzing needs cheaper KDF
+# parameters in fuzz builds — deliberately not done, since that means touching
+# crypto code.
 option(KEYWARD_BUILD_FUZZERS "Build libFuzzer harnesses for the parsers (Clang only)" OFF)
 if(KEYWARD_BUILD_FUZZERS)
   # Coverage-instrument keyward for the fuzzer (this whole build is fuzz-only).
