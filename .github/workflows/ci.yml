@@ -84,6 +84,70 @@ jobs:
             echo -n "keyward-ci" | gnome-keyring-daemon --unlock --components=secrets --daemonize
             ctest --test-dir build/asan --output-on-failure'
 
+  # The parsers take fully attacker-controlled bytes, so they are the one part of
+  # keyward worth coverage-guided fuzzing. Linux-only: Apple's clang ships the
+  # -fsanitize=fuzzer flag but not the runtime.
+  fuzz:
+    name: fuzz (libFuzzer)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect CMake project
+        id: detect
+        shell: bash
+        run: |
+          if [ -f CMakeLists.txt ]; then echo "cmake=true" >> "$GITHUB_OUTPUT";
+          else echo "cmake=false" >> "$GITHUB_OUTPUT"; echo "No CMakeLists.txt yet — skipping."; fi
+
+      - name: Configure (fuzzers, Clang)
+        if: steps.detect.outputs.cmake == 'true'
+        run: |
+          cmake -S . -B build/fuzz -DKEYWARD_BUILD_FUZZERS=ON \
+            -DKEYWARD_BUILD_TESTS=OFF -DKEYWARD_BUILD_TUI=OFF \
+            -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+
+      - name: Build
+        if: steps.detect.outputs.cmake == 'true'
+        run: cmake --build build/fuzz -j
+
+      # ~17k exec/s, so a minute is real coverage rather than a gesture. Seeded
+      # from the committed corpus: seeds raised new-unit discovery by ~55% in a
+      # 20s local run (188 -> 294).
+      # First dir is where libFuzzer WRITES newly-discovered units; the seed dir
+      # is read-only input. Passing the seed dir first would have it grow ~170
+      # generated blobs per run.
+      - name: Fuzz decode_fields
+        if: steps.detect.outputs.cmake == 'true'
+        run: |
+          mkdir -p build/fuzz/found
+          ./build/fuzz/fuzz_decode_fields build/fuzz/found tests/fuzz/corpus/decode_fields \
+            -max_total_time=60 -print_final_stats=1
+
+      # unseal is REPLAYED, not fuzzed, and that is deliberate. It runs Argon2id
+      # over a 100 MB work buffer for every input past the 56-byte header, which
+      # measured at 12 executions in 21 seconds once seeded with valid blobs —
+      # not fuzzing, just a slow way to look busy. Replaying the corpus still
+      # catches a regression that crashes on a known-interesting input, which is
+      # the honest value available at production KDF cost. See docs/THREAT_MODEL.md.
+      - name: Replay unseal corpus
+        if: steps.detect.outputs.cmake == 'true'
+        run: ./build/fuzz/fuzz_unseal tests/fuzz/corpus/unseal -runs=0
+
+      # A crash/leak/timeout writes its reproducer to the working directory;
+      # without this the input that triggered it dies with the runner.
+      - name: Upload crash reproducers
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-reproducers
+          path: |
+            crash-*
+            leak-*
+            timeout-*
+            oom-*
+          if-no-files-found: ignore
+
   build:
     name: build & test (${{ matrix.os }})
     strategy:
