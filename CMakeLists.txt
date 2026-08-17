@@ -241,6 +241,24 @@ if(KEYWARD_BUILD_TESTS)
   endif()
   gtest_discover_tests(secret_service_interop_tests)
 
+  # Gap 3 hardening — locked-keyring behaviour. Registered by hand rather than
+  # via gtest_discover_tests because it MUST go through the isolation wrapper:
+  # it locks the default collection, which would otherwise lock the developer's
+  # real login keyring. Exit 77 from the wrapper means "tooling absent" -> skip.
+  add_executable(secret_service_locked_tests tests/secret_service_locked_test.cpp)
+  target_link_libraries(secret_service_locked_tests PRIVATE keyward GTest::gtest_main)
+  # Registered only where a POSIX shell can run the wrapper. Windows ctest reports
+  # BAD_COMMAND for a .sh COMMAND — a red job, not a skip. The executable is still
+  # built everywhere so the file stays compiled and warning-checked on all three
+  # OSes; off Linux its body is a single GTEST_SKIP anyway. On macOS the wrapper
+  # exits 77 (no gnome-keyring) and ctest reports a skip.
+  if(UNIX)
+    add_test(NAME SecretServiceLocked.Isolated
+             COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_isolated_keyring.sh
+                     $<TARGET_FILE:secret_service_locked_tests>)
+    set_tests_properties(SecretServiceLocked.Isolated PROPERTIES SKIP_RETURN_CODE 77)
+  endif()
+
   # Task 7 — Prompter protocol + Vault::ensure/revise (fake-prompter oracle).
   add_executable(prompter_tests tests/prompter_test.cpp)
   target_link_libraries(prompter_tests PRIVATE keyward GTest::gtest_main)
