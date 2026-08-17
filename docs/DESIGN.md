@@ -17,9 +17,15 @@ owns:
 - **not leaking secrets** while they pass through your process.
 
 The practical consequence: the OS-backed path needs **no full cryptographic
-audit** — the trust anchor is the OS store. The portable encrypted-file backend
-(for headless/CI where no OS store exists) uses audited primitives (Monocypher
-today; a libsodium hardening pass later).
+audit** — the trust anchor is the OS store.
+
+The portable file backend (for headless/CI where no OS store exists) was intended
+to encrypt at rest with audited primitives, and `seal`/`unseal` (Argon2id +
+XChaCha20-Poly1305, Monocypher) were built for it — but they were **never wired
+in**, and the file store writes **plaintext** today. `FileSecretStore`'s own
+header says so; this document previously did not. See
+[FILE_ENCRYPTION.md](FILE_ENCRYPTION.md) for what closing that gap involves and
+the decisions it is blocked on.
 
 ## Developer experience
 
@@ -87,7 +93,7 @@ that, functions read the typed fields directly for their auth calls.
 Vault<T>       typed record <-> Fields, via the schema (member pointers)
    |           encode/decode a record  <-- the record codec
    v
-SecretStore    dumb key -> bytes:  env var -> OS keychain -> encrypted file
+SecretStore    dumb key -> bytes:  env var -> OS keychain -> 0600 file (PLAINTEXT)
    v
 Keychain / libsecret / Credential Manager / seal-unseal
 ```
