@@ -181,7 +181,7 @@ jobs:
           - name: arch
             image: archlinux:latest
             install: >-
-              pacman -Syu --noconfirm --needed cmake gcc git pkgconf
+              pacman -Syu --noconfirm --needed cmake gcc make git pkgconf
               libsecret gnome-keyring glib2 dbus
     steps:
       # Before checkout on purpose: actions/checkout wants git, and these images
@@ -197,17 +197,23 @@ jobs:
           echo "libsecret: $(pkg-config --modversion libsecret-1)"
           gnome-keyring-daemon --version || true
 
-      - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DKEYWARD_BUILD_TUI=OFF
-
-      - name: Build
-        run: cmake --build build -j
-
-      - name: Test with a live Secret Service
+      # Container jobs run as root, and gnome-keyring REFUSES to start as root on
+      # some distros ("error dropping process capabilities - -5, aborting" on
+      # Fedora; Debian's build happens to tolerate it). Running unprivileged is
+      # both the fix and the realistic case — nobody uses a keyring as root.
+      - name: Build and test as an unprivileged user
         run: |
+          useradd -m builder
+          chown -R builder .
+          cat > /tmp/run.sh <<'SCRIPT'
+          set -e
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DKEYWARD_BUILD_TUI=OFF
+          cmake --build build -j
           dbus-run-session -- bash -c '
             echo -n "keyward-ci" | gnome-keyring-daemon --unlock --components=secrets --daemonize
             ctest --test-dir build --output-on-failure'
+          SCRIPT
+          runuser -u builder -- env HOME=/home/builder bash /tmp/run.sh
 
   build:
     name: build & test (${{ matrix.os }})
