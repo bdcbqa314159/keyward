@@ -104,7 +104,7 @@ std::optional<std::string> WindowsCredentialStore::get(const std::string& name) 
   return out;
 }
 
-void WindowsCredentialStore::set(const std::string& name, const std::string& value) {
+void WindowsCredentialStore::set(const std::string& name, std::string_view value) {
   // Fail closed on oversize: never truncate, never downgrade to a file. Credential
   // Manager caps a generic blob at CRED_MAX_CREDENTIAL_BLOB_SIZE (2560 bytes) —
   // large tokens (some JWTs, PEM keys) can exceed this. The message carries name +

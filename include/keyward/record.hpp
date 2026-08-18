@@ -4,6 +4,8 @@
 #include <string_view>
 #include <vector>
 
+#include "keyward/secure_string.hpp"
+
 namespace keyward {
 
 // One named field of a credential record. Whether a field is sensitive (masked
@@ -21,7 +23,7 @@ using Fields = std::vector<Field>;
 // stored as a single item in the OS credential manager. The blob begins with a
 // 1-byte format version so it can evolve. Round-trips exactly, preserves order,
 // and is binary-safe (names and values may contain any byte, incl. '\0', '=', '\n').
-std::string encode_fields(const Fields& fields);
+SecureString encode_fields(const Fields& fields);
 
 // Parse a blob produced by encode_fields back into the fields. Returns
 // std::nullopt if the version byte is unrecognised, or the blob is truncated or

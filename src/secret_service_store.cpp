@@ -187,7 +187,7 @@ std::optional<std::string> SecretServiceStore::get(const std::string& name) {
   return best;
 }
 
-void SecretServiceStore::set(const std::string& name, const std::string& value) {
+void SecretServiceStore::set(const std::string& name, std::string_view value) {
   // Clear first, then store — the same "simplest upsert" the macOS Keychain
   // backend uses, and here it also COLLAPSES duplicates. Storing alone only
   // replaces an item whose attribute set matches ours exactly, so a twin left

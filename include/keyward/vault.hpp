@@ -7,10 +7,11 @@
 #include "keyward/authenticator.hpp"  // Authenticator / Authorization / NoAuth
 #include "keyward/default_store.hpp"  // defaultSecretStore
 #include "keyward/prompter.hpp"       // Prompter / PromptReason / PromptField
-#include "keyward/record.hpp"         // encode_fields / decode_fields
+#include "keyward/record.hpp"
 #include "keyward/schema.hpp"         // to_fields / from_fields
 #include "keyward/secret_store.hpp"   // SecretStore
 #include "keyward/secure_memory.hpp"  // secure_zero
+#include "keyward/secure_string.hpp"  // encode_fields / decode_fields
 
 namespace keyward {
 
@@ -46,9 +47,12 @@ class Vault {
   template <class T>
   void save(const std::string& service, const T& record) {
     Fields fields = to_fields(record);
-    std::string blob = encode_fields(fields);
+    // SecureString, so every buffer the encoder sheds while growing is zeroed as
+    // it is released — the copies an end-of-life wipe can never reach. The final
+    // buffer is zeroed by its destructor for the same reason; `set` takes a
+    // string_view, so handing it over costs no plaintext copy.
+    SecureString blob = encode_fields(fields);
     store_->set(service, blob);
-    secure_zero(blob.data(), blob.size());  // don't leave the serialized secret in freed heap
     wipe_fields(fields);
   }
 

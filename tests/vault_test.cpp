@@ -8,6 +8,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "keyward/schema.hpp"
@@ -23,7 +24,7 @@ class InMemoryStore : public keyward::SecretStore {
     if (it == data_.end()) return std::nullopt;
     return it->second;
   }
-  void set(const std::string& name, const std::string& value) override { data_[name] = value; }
+  void set(const std::string& name, std::string_view value) override { data_[name] = value; }
   void remove(const std::string& name) override { data_.erase(name); }
   std::vector<std::string> list() override {
     std::vector<std::string> names;
