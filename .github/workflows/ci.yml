@@ -150,6 +150,71 @@ jobs:
             oom-*
           if-no-files-found: ignore
 
+  # The Secret Service backend is the code most exposed to distro variation:
+  # attribute matching, `modified` timestamp granularity and lock semantics are
+  # all provider behaviour, and ubuntu-latest pins one libsecret and one keyring
+  # daemon. These jobs run the same suite against other distros' versions.
+  #
+  # Deliberately leaner than the ubuntu job: no TUI (FTXUI is not distro-sensitive
+  # and fetching it doubles the build), and no Python venv, so the keyring interop
+  # test skips here — interop is a vocabulary contract, not a distro one, and it
+  # stays covered on ubuntu.
+  distros:
+    name: distro (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false   # one distro's packaging quirk must not mask the others
+      matrix:
+        include:
+          - name: debian-stable
+            image: debian:stable
+            install: >-
+              apt-get update -qq &&
+              apt-get install -y -qq cmake g++ git pkg-config ca-certificates
+              libsecret-1-dev gnome-keyring libglib2.0-bin dbus
+          - name: fedora
+            image: fedora:latest
+            install: >-
+              dnf -y install cmake gcc-c++ git pkgconf-pkg-config
+              libsecret-devel gnome-keyring glib2 dbus-daemon dbus-tools
+          - name: arch
+            image: archlinux:latest
+            install: >-
+              pacman -Syu --noconfirm --needed cmake gcc make git pkgconf
+              libsecret gnome-keyring glib2 dbus
+    steps:
+      # Before checkout on purpose: actions/checkout wants git, and these images
+      # do not ship it.
+      - name: Install toolchain and Secret Service
+        run: ${{ matrix.install }}
+
+      - uses: actions/checkout@v4
+
+      - name: Report versions
+        run: |
+          cmake --version | head -1
+          echo "libsecret: $(pkg-config --modversion libsecret-1)"
+          gnome-keyring-daemon --version || true
+
+      # Container jobs run as root, and gnome-keyring REFUSES to start as root on
+      # some distros ("error dropping process capabilities - -5, aborting" on
+      # Fedora; Debian's build happens to tolerate it). Running unprivileged is
+      # both the fix and the realistic case — nobody uses a keyring as root.
+      - name: Build and test as an unprivileged user
+        run: |
+          useradd -m builder
+          chown -R builder .
+          cat > /tmp/run.sh <<'SCRIPT'
+          set -e
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DKEYWARD_BUILD_TUI=OFF
+          cmake --build build -j
+          dbus-run-session -- bash -c '
+            echo -n "keyward-ci" | gnome-keyring-daemon --unlock --components=secrets --daemonize
+            ctest --test-dir build --output-on-failure'
+          SCRIPT
+          runuser -u builder -- env HOME=/home/builder bash /tmp/run.sh
+
   build:
     name: build & test (${{ matrix.os }})
     strategy:
