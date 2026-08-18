@@ -48,7 +48,7 @@ std::optional<std::string> KeychainSecretStore::get(const std::string& name) {
   return out;
 }
 
-void KeychainSecretStore::set(const std::string& name, const std::string& value) {
+void KeychainSecretStore::set(const std::string& name, std::string_view value) {
   remove(name);  // simplest upsert: delete any existing item, then add
   CFMutableDictionaryRef q = baseQuery(service_, name);
   CFDataRef data = CFDataCreate(nullptr, reinterpret_cast<const UInt8*>(value.data()),

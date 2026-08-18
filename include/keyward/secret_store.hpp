@@ -2,6 +2,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace keyward {
@@ -13,7 +14,7 @@ class SecretStore {
  public:
   virtual ~SecretStore() = default;
   virtual std::optional<std::string> get(const std::string& name) = 0;
-  virtual void set(const std::string& name, const std::string& value) = 0;
+  virtual void set(const std::string& name, std::string_view value) = 0;
   virtual void remove(const std::string& name) = 0;
   // Human-readable location (a path or "macOS Keychain") for status output.
   virtual std::string location() const = 0;

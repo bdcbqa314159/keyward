@@ -115,7 +115,7 @@ std::optional<std::string> FileSecretStore::get(const std::string& name) {
   return std::nullopt;
 }
 
-void FileSecretStore::set(const std::string& name, const std::string& value) {
+void FileSecretStore::set(const std::string& name, std::string_view value) {
   auto kv = readAll(path_);
   bool found = false;
   for (auto& e : kv)

@@ -6,7 +6,7 @@
 namespace keyward {
 
 namespace {
-void put_u32(std::string& out, uint32_t n) {
+void put_u32(SecureString& out, uint32_t n) {
   out.push_back(static_cast<char>((n >> 24) & 0xFF));
   out.push_back(static_cast<char>((n >> 16) & 0xFF));
   out.push_back(static_cast<char>((n >> 8) & 0xFF));
@@ -25,8 +25,8 @@ uint32_t get_u32(std::string_view blob, std::size_t i) {
 constexpr unsigned char kFormatVersion = 1;
 }  // namespace
 
-std::string encode_fields(const Fields& fields) {
-  std::string out{};
+SecureString encode_fields(const Fields& fields) {
+  SecureString out{};
   out.push_back(static_cast<char>(kFormatVersion));  // version byte first
   for (const Field& f : fields) {
     put_u32(out, f.name.size());

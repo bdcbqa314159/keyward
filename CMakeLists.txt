@@ -259,6 +259,12 @@ if(KEYWARD_BUILD_TESTS)
     set_tests_properties(SecretServiceLocked.Isolated PROPERTIES SKIP_RETURN_CODE 77)
   endif()
 
+  # Harden pass — SecureString / SecureAllocator: no plaintext left in the
+  # buffers a growing string releases.
+  add_executable(secure_string_tests tests/secure_string_test.cpp)
+  target_link_libraries(secure_string_tests PRIVATE keyward GTest::gtest_main)
+  gtest_discover_tests(secure_string_tests)
+
   # Task 7 — Prompter protocol + Vault::ensure/revise (fake-prompter oracle).
   add_executable(prompter_tests tests/prompter_test.cpp)
   target_link_libraries(prompter_tests PRIVATE keyward GTest::gtest_main)

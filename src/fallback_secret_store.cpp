@@ -13,7 +13,7 @@ std::optional<std::string> FallbackSecretStore::get(const std::string& name) {
   return fallback_->get(name);
 }
 
-void FallbackSecretStore::set(const std::string& name, const std::string& value) {
+void FallbackSecretStore::set(const std::string& name, std::string_view value) {
   primary_->set(name, value);  // migrates here; the fallback copy just goes stale
 }
 

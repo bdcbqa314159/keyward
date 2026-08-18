@@ -48,10 +48,23 @@ keyward to store and retrieve.
 
 - ✅ `Secret`, the derived encryption key, and the RNG run on libsodium secure
   memory.
-- ⚠️ **In-flight secrets are not yet fully in secure memory.** Transient copies —
-  stored record bytes and gathered prompt values — still pass through plain
-  `std::string`. The exposure window is brief and in-process only, but it is not
-  closed; the end-to-end wire-through is in progress.
+- ✅ **The serialization path no longer leaks into freed heap.** `encode_fields`
+  builds into a `SecureString` (`SecureAllocator` zeroes every block it
+  releases). This closes a hole that end-of-life wiping *cannot* reach: a growing
+  `std::string` copies its contents into a larger block on each reallocation and
+  frees the old one untouched, so serializing a record scattered prefixes of it —
+  secret values included — across freed memory, where `secure_zero(s.data(),
+  s.size())` never went. `SecretStore::set` now takes a `std::string_view`, so
+  handing the blob to a backend costs no plaintext copy either.
+- ⚠️ **In-flight secrets are still not fully in secure memory.** What remains,
+  narrowed: the **read** path (`SecretStore::get` returns a plain
+  `std::string`, and `decode_fields` writes plain `std::string` field values) and
+  **gathered prompt values** (`PromptField::value`, plus whatever the CLI/TUI
+  holds internally). Those are single exact-size buffers that `Vault` does wipe
+  before release, so the residue is bounded — unlike the growth case above — but
+  the wire-through is not finished. Note also that `from_fields` writes into the
+  caller's own struct members, which keyward cannot control; the `Sensitive` flag
+  in a schema marks which of those matter.
 - Backends: macOS Keychain ✅, Windows Credential Manager ✅, Linux Secret
   Service via libsecret ✅ (`0600` file remains the fallback everywhere).
 - ✅ `decode_fields` is fuzzed in CI on every PR (libFuzzer + ASan, seeded corpus

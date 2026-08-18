@@ -11,7 +11,7 @@ class KeychainSecretStore : public SecretStore {
  public:
   explicit KeychainSecretStore(std::string service = "keyward");
   std::optional<std::string> get(const std::string& name) override;
-  void set(const std::string& name, const std::string& value) override;
+  void set(const std::string& name, std::string_view value) override;
   void remove(const std::string& name) override;
   std::string location() const override { return "macOS Keychain (service=" + service_ + ")"; }
 
