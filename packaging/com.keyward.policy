@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1.0/policyconfig.dtd">
+
+<!--
+  polkit action for keyward. Install to /usr/share/polkit-1/actions/ (root-owned,
+  0644). polkit refuses to reason about actions it does not know, so until this
+  file is installed PolkitAuthenticator reports Unavailable — "cannot ask" — and
+  a FallbackAuthenticator degrades to the passphrase tier rather than locking the
+  user out.
+
+  The defaults below are the interesting part, and they are deliberately
+  conservative:
+
+    allow_any      no   — a remote/other-seat session must not unlock secrets
+    allow_inactive no   — a switched-away session is not present at the keyboard
+    allow_active   auth_self_keep
+
+  auth_self_keep asks the user for *their own* password (not root's) and lets
+  polkit remember it briefly, which is the closest match to what Touch ID and
+  Windows Hello provide on the other platforms: proof of presence, not privilege
+  escalation. An administrator who wants a different policy overrides this in
+  /etc/polkit-1/rules.d/ without editing the shipped file.
+-->
+<policyconfig>
+  <vendor>keyward</vendor>
+  <vendor_url>https://github.com/bdcbqa314159/keyward</vendor_url>
+
+  <action id="com.keyward.access-secret">
+    <description>Access a stored secret</description>
+    <message>Authentication is required to read a secret from your keyring</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_self_keep</allow_active>
+    </defaults>
+  </action>
+</policyconfig>

@@ -52,7 +52,7 @@ jobs:
       # worth sanitizing.
       - name: Install Linux Secret Service deps
         if: steps.detect.outputs.cmake == 'true'
-        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev gnome-keyring libglib2.0-bin
+        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev gnome-keyring libglib2.0-bin libpolkit-gobject-1-dev
 
       - name: Install interop reference (Python keyring)
         if: steps.detect.outputs.cmake == 'true'
@@ -172,17 +172,17 @@ jobs:
             install: >-
               apt-get update -qq &&
               apt-get install -y -qq cmake g++ git pkg-config ca-certificates
-              libsecret-1-dev gnome-keyring libglib2.0-bin dbus
+              libsecret-1-dev gnome-keyring libglib2.0-bin dbus libpolkit-gobject-1-dev
           - name: fedora
             image: fedora:latest
             install: >-
               dnf -y install cmake gcc-c++ git pkgconf-pkg-config
-              libsecret-devel gnome-keyring glib2 dbus-daemon dbus-tools
+              libsecret-devel gnome-keyring glib2 dbus-daemon dbus-tools polkit-devel
           - name: arch
             image: archlinux:latest
             install: >-
               pacman -Syu --noconfirm --needed cmake gcc make git pkgconf
-              libsecret gnome-keyring glib2 dbus
+              libsecret gnome-keyring glib2 dbus polkit
     steps:
       # Before checkout on purpose: actions/checkout wants git, and these images
       # do not ship it.
@@ -239,7 +239,7 @@ jobs:
       # live Secret Service for the contract test to run against.
       - name: Install Linux Secret Service deps
         if: runner.os == 'Linux' && steps.detect.outputs.cmake == 'true'
-        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev gnome-keyring libglib2.0-bin
+        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev gnome-keyring libglib2.0-bin libpolkit-gobject-1-dev
 
       # Python `keyring` is the other side of the Secret Service interop test.
       # Must exist BEFORE configure: CMake locates the CLI with find_program and
