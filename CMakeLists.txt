@@ -34,6 +34,7 @@ add_library(keyward
   src/keychain_secret_store.cpp        # macOS-only body; compiles empty elsewhere
   src/windows_credential_store.cpp     # Windows-only body; compiles empty elsewhere
   src/secret_service_store.cpp         # Linux+libsecret body; compiles empty elsewhere
+  src/polkit_authenticator.cpp         # Linux+polkit body; compiles empty elsewhere
   src/fallback_secret_store.cpp
   src/default_store.cpp
   src/random.cpp
@@ -97,6 +98,32 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     message(STATUS "keyward: libsecret-1 ${LIBSECRET_VERSION} found — Secret Service backend ON")
   else()
     message(STATUS "keyward: libsecret-1 NOT found — Linux falls back to the 0600 file store")
+  endif()
+endif()
+
+# --- optional Linux polkit authenticator ----------------------------------
+# Linux has no Touch ID / Windows Hello equivalent, so presence checks go through
+# the desktop's authorization broker instead. Like libsecret, polkit is NOT part
+# of every Linux, so it is detected rather than assumed and the backend compiles
+# away when absent.
+#
+# Being useful also needs packaging/com.keyward.policy installed into
+# /usr/share/polkit-1/actions/ — polkit will not reason about an action it does
+# not know. PolkitAuthenticator reports Unavailable in that case, so a
+# FallbackAuthenticator degrades to the passphrase tier instead of locking anyone
+# out. Install rules land with the packaging work.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  find_package(PkgConfig QUIET)
+  if(PkgConfig_FOUND)
+    pkg_check_modules(POLKIT QUIET polkit-gobject-1)
+  endif()
+  if(POLKIT_FOUND)
+    target_compile_definitions(keyward PUBLIC KEYWARD_HAVE_POLKIT)
+    target_include_directories(keyward SYSTEM PRIVATE ${POLKIT_INCLUDE_DIRS})
+    target_link_libraries(keyward PRIVATE ${POLKIT_LINK_LIBRARIES})
+    message(STATUS "keyward: polkit-gobject-1 ${POLKIT_VERSION} found — Linux presence checks ON")
+  else()
+    message(STATUS "keyward: polkit-gobject-1 NOT found — Linux has no presence-check tier")
   endif()
 endif()
 
@@ -264,6 +291,12 @@ if(KEYWARD_BUILD_TESTS)
   add_executable(secure_string_tests tests/secure_string_test.cpp)
   target_link_libraries(secure_string_tests PRIVATE keyward GTest::gtest_main)
   gtest_discover_tests(secure_string_tests)
+
+  # Linux presence checks via polkit. The granted path needs a live agent, so
+  # what runs headlessly is the Unavailable/Denied mapping — see the test.
+  add_executable(polkit_authenticator_tests tests/polkit_authenticator_test.cpp)
+  target_link_libraries(polkit_authenticator_tests PRIVATE keyward GTest::gtest_main)
+  gtest_discover_tests(polkit_authenticator_tests)
 
   # Task 7 — Prompter protocol + Vault::ensure/revise (fake-prompter oracle).
   add_executable(prompter_tests tests/prompter_test.cpp)
