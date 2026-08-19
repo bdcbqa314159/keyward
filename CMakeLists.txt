@@ -25,6 +25,50 @@ FetchContent_Declare(Sodium
 set(SODIUM_DISABLE_TESTS ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(Sodium)
 
+# The CMake wrapper performs NO feature detection — it defines only CONFIGURED —
+# so libsodium compiled its FALLBACK allocator and sodium_malloc behaved as plain
+# malloc. Measured before this: no guard pages (a read one byte past a 64-byte
+# allocation succeeded, and the pointer sat at page offset 0x10 instead of flush
+# against a trailing guard), no `lo` VmFlag (so secrets could reach swap) and no
+# `dd` VmFlag (so secrets landed in core dumps). Zeroing on free still worked;
+# the page protections did not, despite what Secret's header claimed.
+#
+# libsodium gates them on plain feature macros, so detect the primitives and hand
+# them over. Where a platform lacks them (Windows has no sys/mman.h) nothing is
+# defined and behaviour is exactly as before.
+#   HAVE_MMAP + MAP_ANON, or HAVE_POSIX_MEMALIGN -> HAVE_ALIGNED_MALLOC
+#   ... plus HAVE_MPROTECT                       -> HAVE_PAGE_PROTECTION (guard pages)
+#   HAVE_MLOCK                                   -> no swap
+#   HAVE_MADVISE                                 -> MADV_DONTDUMP (out of core dumps)
+include(CheckSymbolExists)
+include(CheckIncludeFile)
+# libsodium only includes <sys/mman.h> under HAVE_SYS_MMAN_H, so without this the
+# mlock/mprotect calls compile as implicit declarations and the build fails.
+check_include_file("sys/mman.h" KEYWARD_SYS_HAVE_SYS_MMAN_H)
+check_symbol_exists(mmap           "sys/mman.h" KEYWARD_SYS_HAVE_MMAP)
+check_symbol_exists(mprotect       "sys/mman.h" KEYWARD_SYS_HAVE_MPROTECT)
+check_symbol_exists(mlock          "sys/mman.h" KEYWARD_SYS_HAVE_MLOCK)
+check_symbol_exists(madvise        "sys/mman.h" KEYWARD_SYS_HAVE_MADVISE)
+check_symbol_exists(posix_memalign "stdlib.h"   KEYWARD_SYS_HAVE_POSIX_MEMALIGN)
+# Load-bearing: libsodium only learns the real page size from sysconf(_SC_PAGESIZE)
+# when HAVE_SYSCONF is set. Enable the allocator without it and it builds fine,
+# then aborts at runtime on its own page-arithmetic assertion.
+check_symbol_exists(sysconf        "unistd.h"   KEYWARD_SYS_HAVE_SYSCONF)
+
+set(_keyward_sodium_features "")
+foreach(feat SYS_MMAN_H MMAP MPROTECT MLOCK MADVISE POSIX_MEMALIGN SYSCONF)
+  if(KEYWARD_SYS_HAVE_${feat})
+    list(APPEND _keyward_sodium_features HAVE_${feat})
+  endif()
+endforeach()
+if(_keyward_sodium_features)
+  # PRIVATE: this only changes how libsodium itself is compiled.
+  target_compile_definitions(sodium PRIVATE ${_keyward_sodium_features})
+  message(STATUS "keyward: libsodium memory protections enabled — ${_keyward_sodium_features}")
+else()
+  message(STATUS "keyward: no mman primitives detected — libsodium keeps its fallback allocator")
+endif()
+
 # --- library --------------------------------------------------------------
 # OS-agnostic secret store extracted from data_explorer. The macOS Keychain
 # backend needs Apple frameworks; Monocypher stays a private implementation
@@ -285,6 +329,12 @@ if(KEYWARD_BUILD_TESTS)
                      $<TARGET_FILE:secret_service_locked_tests>)
     set_tests_properties(SecretServiceLocked.Isolated PROPERTIES SKIP_RETURN_CODE 77)
   endif()
+
+  # Regression test for a SILENT build-config failure: libsodium's memory
+  # protections were compiled out, so secure_alloc was plain malloc.
+  add_executable(secure_memory_protection_tests tests/secure_memory_protection_test.cpp)
+  target_link_libraries(secure_memory_protection_tests PRIVATE keyward GTest::gtest_main)
+  gtest_discover_tests(secure_memory_protection_tests)
 
   # Harden pass — SecureString / SecureAllocator: no plaintext left in the
   # buffers a growing string releases.

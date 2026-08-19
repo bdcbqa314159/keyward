@@ -47,7 +47,15 @@ keyward to store and retrieve.
 ## Current hardening status (honest, pre-1.0)
 
 - ✅ `Secret`, the derived encryption key, and the RNG run on libsodium secure
-  memory.
+  memory — guard-paged, `mlock`ed (never swapped) and `MADV_DONTDUMP`ed (never in
+  a core dump), **verified at runtime** by
+  `tests/secure_memory_protection_test.cpp`.
+  This claim was previously **false in practice**: the CMake wrapper that fetches
+  libsodium performs no feature detection, so libsodium compiled its fallback
+  allocator and `sodium_malloc` behaved as plain `malloc`. Zeroing still worked,
+  which is why nothing looked wrong — but secrets could reach swap and appeared in
+  core dumps. keyward now detects the primitives and passes them through, and the
+  regression test fails loudly if they ever go missing again.
 - ✅ **The serialization path no longer leaks into freed heap.** `encode_fields`
   builds into a `SecureString` (`SecureAllocator` zeroes every block it
   releases). This closes a hole that end-of-life wiping *cannot* reach: a growing
