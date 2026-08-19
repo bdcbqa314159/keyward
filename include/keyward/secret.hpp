@@ -9,6 +9,14 @@
 namespace keyward {
 
 // A secret byte buffer held in libsodium secure memory: guard-paged, mlock'd
+// (so it cannot reach swap) and excluded from core dumps.
+//
+// Those properties depend on libsodium being COMPILED with its page-protection
+// support, which the CMake wrapper we fetch does not enable on its own — see the
+// feature detection in CMakeLists.txt. It was silently absent once already, and
+// nothing failed: zeroing still worked while guard pages, mlock and
+// MADV_DONTDUMP were all missing. tests/secure_memory_protection_test.cpp exists
+// to make that regression loud.
 // (never swapped to disk), and zeroed on destruction. Move-only; redacts itself
 // in any textual form. libsodium stays private (behind secure_memory.hpp).
 class Secret {
