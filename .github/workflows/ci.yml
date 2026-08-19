@@ -14,6 +14,7 @@ jobs:
   format:
     name: clang-format
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -34,9 +35,14 @@ jobs:
   # runs the whole suite under ASan + UBSan + LSan, on Linux because that's where
   # the Secret Service backend (the only code doing manual C-API lifetime work)
   # can actually run.
+  # timeout-minutes on every job: a hang used to run until GitHub's 6-hour
+  # default. One sanitizer job sat at 139 minutes before anyone noticed, and its
+  # log stays unavailable while it is in progress — so a hang is not just slow, it
+  # is undiagnosable. A ceiling turns it into a fast, readable failure.
   sanitizers:
     name: sanitizers (ASan+UBSan+LSan)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -90,6 +96,7 @@ jobs:
   fuzz:
     name: fuzz (libFuzzer)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -162,6 +169,7 @@ jobs:
   distros:
     name: distro (${{ matrix.name }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     container: ${{ matrix.image }}
     strategy:
       fail-fast: false   # one distro's packaging quirk must not mask the others
@@ -222,6 +230,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
