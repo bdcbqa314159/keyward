@@ -105,6 +105,38 @@ FetchContent_MakeAvailable(keyward)
 target_link_libraries(your_app PRIVATE keyward::keyward)
 ```
 
+## Implementing the contract (CLI, TUI, GUI)
+
+keyward decides *what* is asked for; your application implements the window that
+asks it. The contract is stated in `include/keyward/prompter.hpp` and
+`include/keyward/authenticator.hpp` as obligations on the implementer — read those
+two headers, not our implementations.
+
+It is also **checkable**. `keyward/testing/conformance.hpp` ships with the library
+and is framework-agnostic (no gtest, no macros, no exceptions), so you can run it
+from whatever test setup you already have:
+
+```cpp
+#include "keyward/testing/conformance.hpp"
+
+const std::vector<keyward::PromptField> before = /* what the SDK hands you */;
+std::vector<keyward::PromptField> after = before;
+const bool accepted = my_prompt_window.collect("jira", reason, after);
+
+auto report = accepted ? keyward::testing::check_accepted(before, after)
+                       : keyward::testing::check_cancelled(before, after);
+ASSERT_TRUE(report.conforms()) << report.summary();
+```
+
+The one obligation worth reading twice: an `Authenticator` that cannot ask must
+return **`Unavailable`**, never `Denied`. Only `Unavailable` lets a
+`FallbackAuthenticator` try the next tier — returning `Denied` strands the user
+with no way forward. `check_authenticator_when_unavailable()` catches exactly that.
+
+`keyward::cli` and `keyward::tui` are the reference implementations. The FTXUI one
+runs its own modal loop inside `collect()` and assumes the host application cedes
+the terminal for the duration of the call.
+
 ## Install and consume
 
 **No root required, and no reconfiguring for a different prefix.** Pick any
