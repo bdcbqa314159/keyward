@@ -1,0 +1,16 @@
+# Relocatable on purpose. ${pcfiledir} is where THIS file was found, so the
+# prefix is derived at use time rather than baked in at configure time — a
+# keyward installed into ~/.local, /opt, or a container staging dir reports the
+# right paths without being reconfigured. The relative hop is computed by CMake
+# because libdir varies (lib, lib64, lib/x86_64-linux-gnu on Debian multiarch).
+prefix=${pcfiledir}/@KEYWARD_PC_REL_PREFIX@
+exec_prefix=${prefix}
+libdir=${prefix}/@CMAKE_INSTALL_LIBDIR@
+includedir=${prefix}/@CMAKE_INSTALL_INCLUDEDIR@
+
+Name: keyward
+Description: Typed, OS-keychain-backed secret storage for C++20
+Version: @PROJECT_VERSION@
+Requires.private: @KEYWARD_PC_REQUIRES_PRIVATE@
+Cflags: -I${includedir} @KEYWARD_PC_CFLAGS@
+Libs: -L${libdir} -lkeyward -lmonocypher -lsodium

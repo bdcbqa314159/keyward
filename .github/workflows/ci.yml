@@ -223,6 +223,56 @@ jobs:
           SCRIPT
           runuser -u builder -- env HOME=/home/builder bash /tmp/run.sh
 
+  # Proves an INSTALLED keyward is consumable, which install() succeeding does not.
+  # Installs to a NON-ROOT prefix on purpose: that is the case that breaks, because
+  # paths baked in at configure time silently point at /usr/local. Both supported
+  # routes are exercised — find_package and pkg-config.
+  package:
+    name: install & consume
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev libpolkit-gobject-1-dev
+
+      - name: Build and install to an unprivileged prefix
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DKEYWARD_BUILD_TESTS=OFF -DKEYWARD_BUILD_TUI=OFF
+          cmake --build build -j
+          cmake --install build --prefix "$HOME/kw-prefix"
+
+      # A keyward package must ship keyward, not googletest or FTXUI.
+      - name: Check the prefix contains only keyward's own artifacts
+        run: |
+          ls "$HOME/kw-prefix/lib"
+          for stray in libgtest.a libgmock.a libftxui-dom.a; do
+            if [ -e "$HOME/kw-prefix/lib/$stray" ]; then
+              echo "::error::$stray leaked into the keyward install prefix"; exit 1
+            fi
+          done
+
+      - name: Consume via find_package
+        run: |
+          cmake -S packaging/consumer-test -B build-consumer \
+            -DCMAKE_PREFIX_PATH="$HOME/kw-prefix"
+          cmake --build build-consumer -j
+          ./build-consumer/consumer
+
+      # keyward is a static library, so private deps only appear under --static.
+      - name: Consume via pkg-config
+        run: |
+          export PKG_CONFIG_PATH="$HOME/kw-prefix/lib/pkgconfig"
+          test -n "$(pkg-config --cflags keyward)" || { echo "::error::keyward.pc not found"; exit 1; }
+          case "$(pkg-config --cflags keyward)" in
+            */usr/local/*) echo "::error::keyward.pc is not relocatable — it resolved to /usr/local"; exit 1 ;;
+          esac
+          g++ -std=c++20 $(pkg-config --cflags keyward) packaging/consumer-test/main.cpp \
+            -o pc-consumer $(pkg-config --static --libs keyward)
+          ./pc-consumer
+
   build:
     name: build & test (${{ matrix.os }})
     strategy:

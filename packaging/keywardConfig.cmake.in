@@ -1,0 +1,21 @@
+@PACKAGE_INIT@
+
+# keyward links its optional system dependencies PRIVATELY, but a STATIC library
+# defers that link to the consumer — so the same libraries must be found again
+# here, or linking against an installed keyward fails with undefined symbols.
+# Only the ones this build actually used are required.
+include(CMakeFindDependencyMacro)
+set(KEYWARD_HAVE_LIBSECRET @LIBSECRET_FOUND@)
+set(KEYWARD_HAVE_POLKIT    @POLKIT_FOUND@)
+if(KEYWARD_HAVE_LIBSECRET OR KEYWARD_HAVE_POLKIT)
+  find_dependency(PkgConfig)
+  if(KEYWARD_HAVE_LIBSECRET)
+    pkg_check_modules(LIBSECRET REQUIRED libsecret-1)
+  endif()
+  if(KEYWARD_HAVE_POLKIT)
+    pkg_check_modules(POLKIT REQUIRED polkit-gobject-1)
+  endif()
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/keywardTargets.cmake")
+check_required_components(keyward)

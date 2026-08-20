@@ -105,6 +105,52 @@ FetchContent_MakeAvailable(keyward)
 target_link_libraries(your_app PRIVATE keyward::keyward)
 ```
 
+## Install and consume
+
+**No root required, and no reconfiguring for a different prefix.** Pick any
+directory you can write to:
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+cmake --install build --prefix ~/.local        # or /opt/keyward, or a staging dir
+```
+
+Then either route works:
+
+```cmake
+# CMake
+find_package(keyward REQUIRED)                 # cmake -DCMAKE_PREFIX_PATH=~/.local
+target_link_libraries(your_app PRIVATE keyward::keyward)
+```
+
+```bash
+# pkg-config — note --static: keyward is a static library, so its private
+# dependencies (libsecret, polkit, libsodium) only appear with that flag.
+export PKG_CONFIG_PATH=~/.local/lib/pkgconfig
+g++ -std=c++20 $(pkg-config --cflags keyward) app.cpp $(pkg-config --static --libs keyward)
+```
+
+`packaging/consumer-test/` is a working example of the CMake route, and CI builds
+it against a freshly installed prefix on every PR.
+
+### What gets installed
+`libkeyward.a` plus its vendored `libmonocypher.a` and `libsodium.a` (a static
+keyward does not contain their objects, so consumers need them), the public
+headers, the CMake package files, `keyward.pc`, and — on Linux with polkit —
+`share/polkit-1/actions/com.keyward.policy`.
+
+### One thing a user-prefix install cannot do
+polkit only reads actions from the **system** directory (`/usr/share/polkit-1/actions`).
+Installed under `~/.local`, the policy file lands somewhere polkit never looks, so
+`PolkitAuthenticator` reports `Unavailable` and a `FallbackAuthenticator` degrades
+to the passphrase tier. That is the designed behaviour, not a failure — but if you
+want the polkit tier, that one file needs a root-owned system install:
+
+```bash
+sudo install -m 644 packaging/com.keyward.policy /usr/share/polkit-1/actions/
+```
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
