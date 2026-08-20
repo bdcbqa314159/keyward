@@ -133,9 +133,31 @@ return **`Unavailable`**, never `Denied`. Only `Unavailable` lets a
 `FallbackAuthenticator` try the next tier — returning `Denied` strands the user
 with no way forward. `check_authenticator_when_unavailable()` catches exactly that.
 
-`keyward::cli` and `keyward::tui` are the reference implementations. The FTXUI one
-runs its own modal loop inside `collect()` and assumes the host application cedes
-the terminal for the duration of the call.
+### The reference implementations
+
+`keyward::cli` is a compiled component you link. **The FTXUI prompter is a
+header** — include it and it compiles against *your* FTXUI:
+
+```cpp
+#include <keyward/tui_prompter.hpp>     // you supply FTXUI (e.g. libftxui-dev)
+
+keyward::TuiPrompter prompter;
+auto cred = vault.ensure<JiraCredential>("jira", prompter);
+```
+
+There is no `keyward::tui` library to find or link. That is deliberate: the only
+app that wants an FTXUI prompter already links FTXUI, and a second copy of a
+header-heavy C++ library in one binary is an ODR hazard — a silent one. Compiling
+~100 lines in your own translation unit avoids it, along with any version pin from
+us and any ABI mismatch from our build flags. CI proves the path by building this
+against the distro's `libftxui-dev` rather than the version keyward pins.
+
+The same shape answers any other toolkit: a Qt or ImGui prompter would also be a
+header you compile against your own stack. keyward ships the contract plus
+reference implementations; the toolkit stays yours.
+
+The FTXUI prompter runs its own modal loop inside `collect()`, so **the host
+application must cede the terminal** for the duration of the call.
 
 ## Install and consume
 

@@ -235,7 +235,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev libpolkit-gobject-1-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsecret-1-dev libpolkit-gobject-1-dev libftxui-dev
 
       - name: Build and install to an unprivileged prefix
         run: |
@@ -260,6 +262,24 @@ jobs:
             -DCMAKE_PREFIX_PATH="$HOME/kw-prefix"
           cmake --build build-consumer -j
           ./build-consumer/consumer
+
+      # The TUI prompter is header-only precisely so an app compiles it against
+      # ITS OWN FTXUI. Building here against the DISTRO's libftxui-dev — not the
+      # version keyward pins — is what makes that claim testable: no keyward TUI
+      # library is linked, and no second copy of FTXUI enters the binary.
+      - name: Consume the header-only TUI prompter against the system FTXUI
+        run: |
+          g++ -std=c++20 -I "$HOME/kw-prefix/include" \
+            packaging/consumer-test/tui_main.cpp -o tui-consumer \
+            -lftxui-component -lftxui-dom -lftxui-screen \
+            "$HOME/kw-prefix/lib/libkeyward.a" "$HOME/kw-prefix/lib/libmonocypher.a" \
+            "$HOME/kw-prefix/lib/libsodium.a" \
+            $(pkg-config --libs libsecret-1 polkit-gobject-1)
+          ./tui-consumer
+          if [ -e "$HOME/kw-prefix/lib/libkeyward_tui.a" ]; then
+            echo "::error::a keyward_tui library was installed; the TUI is meant to be header-only"
+            exit 1
+          fi
 
       # keyward is a static library, so private deps only appear under --static.
       - name: Consume via pkg-config
