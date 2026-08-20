@@ -125,16 +125,26 @@ class Vault {
       fields.push_back({spec.name, spec.sensitivity == Sensitivity::Sensitive,
                         prefill ? prefill->*(spec.member) : std::string{}});
     }
+    // Wipe whatever the prompter gathered on EVERY exit path, cancellation
+    // included. A user who types a passphrase and then backs out has still typed
+    // it — and the cancel branch below returns before the wipe that used to live
+    // at the end of this function, leaving that plaintext in a plain std::string
+    // to be freed untouched. A scope guard cannot be skipped by a return.
+    struct WipeFieldsOnExit {
+      std::vector<PromptField>& fields;
+      ~WipeFieldsOnExit() {
+        for (PromptField& f : fields) secure_zero(f.value.data(), f.value.size());
+      }
+    } wipe_guard{fields};
+
     if (!prompter.collect(service, reason, fields)) return std::nullopt;  // cancelled
 
     Fields collected;
     for (const PromptField& f : fields) collected.push_back({f.name, f.value});
     std::optional<T> record = from_fields<T>(collected);
 
-    // Wipe the gathered/serialized plaintext transients (the record is the
-    // caller's to hold; save() wipes its own copies).
+    // The record is the caller's to hold; save() wipes its own copies.
     wipe_fields(collected);
-    for (PromptField& f : fields) secure_zero(f.value.data(), f.value.size());
 
     if (!record) return std::nullopt;  // prompter returned an incomplete set
     save<T>(service, *record);

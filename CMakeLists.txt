@@ -427,6 +427,12 @@ if(KEYWARD_BUILD_TESTS)
   target_link_libraries(secure_memory_protection_tests PRIVATE keyward GTest::gtest_main)
   gtest_discover_tests(secure_memory_protection_tests)
 
+  # The shipped conformance suite, run against our own references AND against
+  # deliberately broken ones — a checker that cannot fail is worthless.
+  add_executable(conformance_tests tests/conformance_test.cpp)
+  target_link_libraries(conformance_tests PRIVATE keyward_cli GTest::gtest_main)
+  gtest_discover_tests(conformance_tests)
+
   # Harden pass — SecureString / SecureAllocator: no plaintext left in the
   # buffers a growing string releases.
   add_executable(secure_string_tests tests/secure_string_test.cpp)
