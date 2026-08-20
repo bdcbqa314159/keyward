@@ -75,6 +75,13 @@ specification and no conformance suite is just an expectation.
 
 ### What "everything needed" should mean
 
+> **Items 1 and 2 done (2026-08-20).** The obligations are now stated in
+> `prompter.hpp` and `authenticator.hpp`, and `keyward/testing/conformance.hpp`
+> ships as a framework-agnostic suite an integrating team runs against their own
+> window. Writing the contract down also surfaced a real bug: `prompt_and_save`
+> returned on cancellation *before* its wipe, so a passphrase typed and then
+> backed out of was never zeroed. Item 3 — shipping the TUI — remains open.
+
 1. **State the obligations where they are read** — in `authenticator.hpp` and
    `prompter.hpp`, as requirements on the implementer, not descriptions of our
    implementations.
