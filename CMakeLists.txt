@@ -199,11 +199,25 @@ else()
   target_compile_options(keyward_cli PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-# --- optional TUI prompter component (needs FTXUI) ------------------------
-# keyward::tui — an FTXUI form Prompter. Off unless top-level (a FetchContent
-# consumer of keyward core never pays for FTXUI); flip -DKEYWARD_BUILD_TUI=ON to
-# force it. FTXUI headers are treated as SYSTEM so their warnings don't trip ours.
-option(KEYWARD_BUILD_TUI "Build the keyward::tui component (fetches FTXUI)" ${PROJECT_IS_TOP_LEVEL})
+# --- TUI prompter: header-only, no target to link -------------------------
+# keyward::tui used to be a compiled library that was never installed and never
+# built for consumers — so the TUI, a stated headline feature, did not actually
+# ship. It is now a header (include/keyward/tui_prompter.hpp), which is the
+# natural unit for ~100 lines adapting to somebody else's UI library:
+#
+#   - the only app that wants it already links FTXUI, so compiling it in THEIR
+#     translation unit against THEIR FTXUI avoids a second copy of a header-heavy
+#     C++ library in one binary — an ODR hazard, and a silent one;
+#   - no version pin, no ABI fragility from our flags, nothing to install beyond
+#     the headers we already install.
+#
+# It matches the house style: the parts that adapt to a caller's types or toolkit
+# are headers (schema, vault, fallback_authenticator); the parts owning platform
+# code or state are compiled.
+#
+# FTXUI is fetched here only so OUR tests and examples compile the header against
+# a pinned version. Consumers supply their own (libftxui-dev, or FetchContent).
+option(KEYWARD_BUILD_TUI "Fetch FTXUI so keyward's own TUI tests build" ${PROJECT_IS_TOP_LEVEL})
 if(KEYWARD_BUILD_TUI)
   include(FetchContent)
   FetchContent_Declare(ftxui
@@ -218,18 +232,7 @@ if(KEYWARD_BUILD_TUI)
   set(FTXUI_BUILD_DOCS OFF CACHE BOOL "" FORCE)
   set(FTXUI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
   FetchContent_MakeAvailable(ftxui)
-
-  add_library(keyward_tui src/tui_prompter.cpp)
-  add_library(keyward::tui ALIAS keyward_tui)
-  target_link_libraries(keyward_tui PUBLIC keyward PRIVATE ftxui::component ftxui::dom ftxui::screen)
-  target_include_directories(keyward_tui SYSTEM PRIVATE ${ftxui_SOURCE_DIR}/include)
-  if(MSVC)
-    target_compile_options(keyward_tui PRIVATE /W4)
-  else()
-    target_compile_options(keyward_tui PRIVATE -Wall -Wextra -Wpedantic)
-  endif()
 endif()
-
 
 # --- install / export -----------------------------------------------------
 # Without this keyward is FetchContent-only: it cannot be packaged for a distro
@@ -246,6 +249,8 @@ if(KEYWARD_INSTALL)
   include(GNUInstallDirs)
   include(CMakePackageConfigHelpers)
 
+  # No keyward_tui target any more: the TUI prompter is a header, and headers
+  # are installed wholesale by the install(DIRECTORY) below.
   set(_keyward_install_targets keyward keyward_cli monocypher sodium)
   install(TARGETS ${_keyward_install_targets}
     EXPORT keywardTargets
@@ -472,8 +477,12 @@ if(KEYWARD_BUILD_TESTS)
   # Interactive form isn't headless-testable; this checks the title logic + that
   # it links and satisfies Prompter.
   if(KEYWARD_BUILD_TUI)
+    # Compiles the header-only prompter against pinned FTXUI, exactly as a
+    # consumer would against their own.
     add_executable(tui_prompter_tests tests/tui_prompter_test.cpp)
-    target_link_libraries(tui_prompter_tests PRIVATE keyward_tui GTest::gtest_main)
+    target_link_libraries(tui_prompter_tests
+      PRIVATE keyward GTest::gtest_main ftxui::component ftxui::dom ftxui::screen)
+    target_include_directories(tui_prompter_tests SYSTEM PRIVATE ${ftxui_SOURCE_DIR}/include)
     gtest_discover_tests(tui_prompter_tests)
   endif()
 endif()
