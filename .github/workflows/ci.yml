@@ -293,6 +293,22 @@ jobs:
             exit 1
           fi
 
+      # The headless-gatherer example is the answer to "can an unattended job use
+      # this?" — it must keep compiling against an installed keyward, and it must
+      # still work with no session bus and no terminal.
+      - name: Build and run the headless gatherer example
+        run: |
+          export PKG_CONFIG_PATH="$HOME/kw-prefix/lib/pkgconfig"
+          g++ -std=c++20 $(pkg-config --cflags keyward) examples/headless_gatherer.cpp \
+            -o gatherer $(pkg-config --static --libs keyward)
+          env -u DBUS_SESSION_BUS_ADDRESS \
+            KEYWARD_GATHERER_WAREHOUSE_ENDPOINT=https://dw.example \
+            KEYWARD_GATHERER_WAREHOUSE_TOKEN=abc123XYZ ./gatherer
+          # Nothing configured must fail honestly, not half-work.
+          if env -u DBUS_SESSION_BUS_ADDRESS ./gatherer; then
+            echo "::error::the gatherer reported success with no credentials"; exit 1
+          fi
+
       # keyward is a static library, so private deps only appear under --static.
       - name: Consume via pkg-config
         run: |
