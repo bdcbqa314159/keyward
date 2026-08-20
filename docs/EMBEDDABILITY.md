@@ -1,9 +1,11 @@
 # keyward — making it safe to embed (scope, not an implementation)
 
 keyward is *"a lib that other people could use if they want to ship it in their
-apps or bindings."* That answer, given 2026-08-20, changes what the next work
-should be. Four problems stand between the current code and that goal, and all
-four outrank the open questions in `FILE_ENCRYPTION.md` and `AGENT_SCOPE.md`.
+apps or bindings"* — and, stated alongside it as a **major requirement**, keyward
+provides *everything needed*, including the CLI and GUI an app pulls into itself.
+That answer, given 2026-08-20, changes what the next work should be. Five problems
+stand between the current code and that goal, and all five outrank the open
+questions in `FILE_ENCRYPTION.md` and `AGENT_SCOPE.md`.
 
 Nothing here is implemented. Each item states what was measured, why it matters
 *specifically* for an embedded library, and what the fix costs.
