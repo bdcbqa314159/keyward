@@ -59,6 +59,12 @@ too, so it cannot be scoped as "Linux hardening". Second, the urgent case is
 narrow — a Linux box without libsecret, or a BSD — because everywhere else the
 tier only holds entries that predate the native vault.
 
+> **Sequencing note (2026-08-20).** keyward is a library others embed or bind, so
+> `KeyProvider` has to cross a C boundary that does not exist yet. See
+> [EMBEDDABILITY.md](EMBEDDABILITY.md) — that work comes first, and it also settles
+> Decision 5: encryption is **opt-in**, because an embedded library must never
+> start prompting inside someone else's app.
+
 ## Decision 1 — where does the key come from?
 
 This is the blocker. Four candidates:
