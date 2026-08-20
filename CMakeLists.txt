@@ -90,6 +90,7 @@ add_library(keyward
   src/record_codec.cpp
   src/secure_memory.cpp
   src/passphrase_authenticator.cpp
+  src/key_provider.cpp
   src/biometric_authenticator.cpp  # Objective-C++ on Apple (see -x below); plain C++ elsewhere
 )
 add_library(keyward::keyward ALIAS keyward)
@@ -375,6 +376,11 @@ if(KEYWARD_BUILD_TESTS)
   add_executable(passphrase_authenticator_tests tests/passphrase_authenticator_test.cpp)
   target_link_libraries(passphrase_authenticator_tests PRIVATE keyward GTest::gtest_main)
   gtest_discover_tests(passphrase_authenticator_tests)
+
+  # KeyProvider seam — passphrase-derived file key (scripted-source oracle).
+  add_executable(key_provider_tests tests/key_provider_test.cpp)
+  target_link_libraries(key_provider_tests PRIVATE keyward GTest::gtest_main)
+  gtest_discover_tests(key_provider_tests)
 
   # FallbackAuthenticator policy (fakes) + a link/availability smoke of Biometric.
   add_executable(fallback_authenticator_tests tests/fallback_authenticator_test.cpp)
