@@ -237,7 +237,21 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsecret-1-dev libpolkit-gobject-1-dev libftxui-dev
+          sudo apt-get install -y libsecret-1-dev libpolkit-gobject-1-dev
+
+      # FTXUI is not packaged on the runner image, so build one SEPARATELY from
+      # keyward's own build tree. That separateness is the point being tested: the
+      # consumer compiles the header-only prompter against an FTXUI keyward did
+      # not build, so no second copy enters the binary and no keyward TUI library
+      # is involved.
+      - name: Build an independent FTXUI for the consumer
+        run: |
+          git clone --depth 1 --branch v5.0.0 https://github.com/ArthurSonzogni/FTXUI.git /tmp/ftxui
+          cmake -S /tmp/ftxui -B /tmp/ftxui/build -DCMAKE_BUILD_TYPE=Release \
+            -DFTXUI_BUILD_EXAMPLES=OFF -DFTXUI_BUILD_DOCS=OFF -DFTXUI_BUILD_TESTS=OFF \
+            -DCMAKE_INSTALL_PREFIX="$HOME/ftxui-prefix"
+          cmake --build /tmp/ftxui/build -j
+          cmake --install /tmp/ftxui/build
 
       - name: Build and install to an unprivileged prefix
         run: |
@@ -264,14 +278,12 @@ jobs:
           ./build-consumer/consumer
 
       # The TUI prompter is header-only precisely so an app compiles it against
-      # ITS OWN FTXUI. Building here against the DISTRO's libftxui-dev — not the
-      # version keyward pins — is what makes that claim testable: no keyward TUI
-      # library is linked, and no second copy of FTXUI enters the binary.
-      - name: Consume the header-only TUI prompter against the system FTXUI
+      # ITS OWN FTXUI — the one built above, not keyward's.
+      - name: Consume the header-only TUI prompter against that FTXUI
         run: |
-          g++ -std=c++20 -I "$HOME/kw-prefix/include" \
+          g++ -std=c++20 -I "$HOME/kw-prefix/include" -I "$HOME/ftxui-prefix/include" \
             packaging/consumer-test/tui_main.cpp -o tui-consumer \
-            -lftxui-component -lftxui-dom -lftxui-screen \
+            -L "$HOME/ftxui-prefix/lib" -lftxui-component -lftxui-dom -lftxui-screen \
             "$HOME/kw-prefix/lib/libkeyward.a" "$HOME/kw-prefix/lib/libmonocypher.a" \
             "$HOME/kw-prefix/lib/libsodium.a" \
             $(pkg-config --libs libsecret-1 polkit-gobject-1)

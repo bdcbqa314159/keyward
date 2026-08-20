@@ -2,9 +2,9 @@
 // header-only prompter and compile it against YOUR OWN FTXUI, with no keyward
 // TUI library to find or link.
 //
-// CI builds this against the distro's libftxui-dev — deliberately not the version
-// keyward pins — because that is the whole claim being tested: the prompter is
-// not tied to our FTXUI.
+// CI builds this against an FTXUI built SEPARATELY from keyward's own build tree,
+// because that separateness is the claim being tested: the consumer's FTXUI is
+// the one that ends up in the binary, and no keyward TUI library is linked.
 //
 // It does not run the interactive form (a CI runner has no terminal). Compiling
 // and linking is the assertion; the form's behaviour is covered by keyward's own
