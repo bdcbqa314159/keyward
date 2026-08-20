@@ -25,45 +25,74 @@ what is below.
 3. **Your headers are a contract.** Their *shape* cannot depend on how you were
    built.
 
-## Problem 0 — the UI components are not actually shippable
+## Problem 0 — the contract is under-specified, and its reference UI does not ship
 
-**Stated requirement (2026-08-20):** keyward provides *everything needed* — if an
-app wants a CLI or a GUI for its secrets, keyward supplies it rather than making
-the app build one. That is a headline feature, not a nicety, which makes the
-current state a contradiction:
+**What was actually asked for (2026-08-20):** keyward provides *"the contract that
+has to be respected to use the library correctly"*. The TUI is one hands-on
+realisation of that contract — and not an arbitrary one: **keyward was extracted
+from an FTXUI application**, whose need for secrets is why this library exists. So
+the promise is not "we ship a Qt app". It is: the contract is specified well
+enough that a CLI, a TUI, or somebody's Qt app can each implement it correctly,
+with our CLI and TUI as the worked proof.
+
+That reframes the work. Shipping more UIs is not the deliverable; **a contract an
+outsider can implement without reading our source** is.
+
+### The contract is written in the wrong place
+
+`Authorization` has four values, and the difference between two of them is
+load-bearing: `FallbackAuthenticator` degrades on **`Unavailable` only**, so an
+authenticator that returns `Denied` when it means "I could not ask" silently
+strands the user with no fallback tier. That rule is documented in
+`fallback_authenticator.hpp` — a file an implementer has no reason to open.
+`authenticator.hpp`, which they *will* open, says only:
+
+> `service` is the record being accessed; `reason` is a human-readable verb.
+> Return Allowed to release the secret.
+
+Nothing there would stop a third party writing the exact bug that
+`PolkitAuthenticator` had to be carefully designed to avoid.
+
+`Prompter` is better — it says a gatherer never touches storage or crypto — but
+its obligations are still implicit. An implementer cannot tell from the header
+whether they must preserve the field count and order, leave `value` untouched when
+returning false, actually mask `sensitive` fields, avoid persisting or logging
+what they collect, what to do with no TTY, or whether `collect` may throw.
+
+### What "everything needed" should mean
+
+1. **State the obligations where they are read** — in `authenticator.hpp` and
+   `prompter.hpp`, as requirements on the implementer, not descriptions of our
+   implementations.
+2. **Ship a conformance suite.** There is none today: contract tests exist but are
+   hard-wired to our own types. A header a third party instantiates against *their*
+   `Prompter` / `Authenticator` / `SecretStore` turns "respect the contract" from a
+   request into something they can run. This matters most for bindings, where the
+   author cannot read C++ semantics out of our headers at all.
+3. **Keep CLI and TUI as reference implementations** — and actually ship them,
+   which today the TUI does not do (below).
+
+### The TUI genuinely does not ship
 
 - `keyward_tui` is **not installed at all**. The install set is
-  `keyward keyward_cli monocypher sodium`; the prefix contains no TUI.
-- `KEYWARD_BUILD_TUI` defaults to `PROJECT_IS_TOP_LEVEL`, so a **FetchContent
-  consumer does not get the TUI by default** either. It exists for us, not for them.
-- `keyward_tui` links `ftxui::component/dom/screen`, which are FetchContent
-  targets. `FTXUI_ENABLE_INSTALL` is now `OFF` (set while stopping FTXUI polluting
-  our prefix — right for hygiene), so an installed `keyward_tui` would have
-  dependencies that do not exist on the target machine.
+  `keyward keyward_cli monocypher sodium`.
+- `KEYWARD_BUILD_TUI` defaults to `PROJECT_IS_TOP_LEVEL`, so a FetchContent
+  consumer does not get it by default either — it exists for us, not for them.
+- `keyward_tui` links FTXUI targets, and `FTXUI_ENABLE_INSTALL` is now `OFF` (set
+  while stopping FTXUI polluting our prefix — right for hygiene), so an installed
+  `keyward_tui` would have dependencies that are not there.
 
-So today the CLI ships and the GUI does not. Fixing it needs three decisions,
-because "ship a TUI inside someone else's app" is harder than shipping a library:
+Installing it is a one-line change that would ship something broken. Two questions
+first, and the second shares its answer with Problem 1:
 
-**Who owns the terminal?** `TuiPrompter` runs an FTXUI event loop. Inside a host
-application that already owns the terminal — or is a GUI app with no TTY at all —
-that is not a detail. The prompter needs a documented contract: what it does to
-terminal state, whether it restores it, what happens with no TTY, and whether it
-is safe to call from a thread that is not the host's main loop.
+**Who owns the terminal?** `TuiPrompter` runs an FTXUI event loop inside a host
+that may already own the terminal, or be a GUI app with no TTY. Terminal state,
+restoration, no-TTY behaviour and main-loop safety belong in the contract — this
+is the sharpest case of "you do not own the process".
 
-**How does FTXUI reach the user's machine?** Either vendor and hide it (same
-problem as libsodium, one more dependency), require it as a system package, or
-keep the TUI as a source-drop-in the app compiles itself. The third is unusual but
-fits "we provide everything needed" without imposing our dependency graph.
-
-**What does a GUI toolkit that is not FTXUI do?** An app built on Qt or GTK cannot
-use an FTXUI prompter at all. The `Prompter` interface is the right seam — it is
-already abstract — so the honest framing is: keyward ships *reference* prompters
-(CLI, TUI) and any app can supply its own. That should be stated, because
-"everything needed" otherwise implies a Qt prompter exists.
-
-This is Problem 0 because it is a stated requirement that is currently unmet, and
-because the answer to "how does FTXUI ship" is the same class of question as
-Problem 1 (what we vendor and how we hide it) — they should be decided together.
+**How does FTXUI reach the user's machine?** Vendor and hide it, require it as a
+system package, or ship the prompter as source the app compiles. Same class of
+decision as libsodium, so decide them together.
 
 ## Problem 1 — 113 global symbols that can collide (highest risk)
 
@@ -201,9 +230,9 @@ boundary's shape.
 2. Does the shared object export the **C++ API at all**, or only the C ABI? Only-C
    is far easier to keep stable, but forces C++ users through a lossy interface.
 3. How does the TUI ship — vendor FTXUI and hide it, require it as a system
-   package, or offer the prompter as source the app compiles? And does
-   "everything needed" extend to a Qt/GTK prompter, or is the promise "reference
-   prompters plus a seam for your own"?
+   package, or offer the prompter as source the app compiles?
+   (The Qt/GTK question is **answered**: keyward ships the contract and reference
+   prompters, not a prompter per toolkit.)
 4. Which bindings actually matter first — Python (where `keyring` interop already
    works and may make bindings less necessary), or something else?
 5. `THREAT_MODEL.md` says *"not independently audited — do not entrust other
