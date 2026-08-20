@@ -11,7 +11,11 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)  # for clangd / editor language server
 # our strict warning flags don't apply to third-party code. PIC so keyward can
 # be built shared later.
 add_library(monocypher STATIC third_party/monocypher/monocypher.c)
-target_include_directories(monocypher PUBLIC third_party/monocypher)
+# BUILD_INTERFACE only: keyward's sources need monocypher.h while building, but
+# consumers never see it (it is a private implementation detail), and a bare
+# source-tree path cannot be exported by install(EXPORT).
+target_include_directories(monocypher PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/monocypher>)
 set_target_properties(monocypher PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # --- fetched libsodium (audited secure memory + CSPRNG + constant-time) ----
@@ -95,6 +99,18 @@ target_include_directories(keyward PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 target_link_libraries(keyward PRIVATE monocypher sodium)
+
+# Only secure_memory.cpp includes <sodium.h>; nothing outside keyward ever does.
+# The wrapper publishes the headers through sodium's INTERFACE_INCLUDE_DIRECTORIES
+# as raw build-tree paths, and install(EXPORT) refuses those ("path is prefixed in
+# the build directory"). Take the paths onto keyward as a private include, then
+# clear sodium's interface so the target becomes exportable. Consumers lose
+# nothing, because they never include libsodium headers through us.
+get_target_property(_keyward_sodium_includes sodium INTERFACE_INCLUDE_DIRECTORIES)
+if(_keyward_sodium_includes)
+  target_include_directories(keyward SYSTEM PRIVATE ${_keyward_sodium_includes})
+  set_target_properties(sodium PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "")
+endif()
 
 # Strict warnings on our own code (vendored Monocypher, above, is exempt).
 # PRIVATE so consumers don't inherit our warning flags.
@@ -195,6 +211,9 @@ if(KEYWARD_BUILD_TUI)
     GIT_TAG        v5.0.0
     GIT_SHALLOW    TRUE
   )
+  # Without this, `cmake --install` on keyward also installs FTXUI's libraries and
+  # headers into our prefix — a keyward package must not ship someone else's.
+  set(FTXUI_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
   set(FTXUI_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
   set(FTXUI_BUILD_DOCS OFF CACHE BOOL "" FORCE)
   set(FTXUI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -211,6 +230,77 @@ if(KEYWARD_BUILD_TUI)
   endif()
 endif()
 
+
+# --- install / export -----------------------------------------------------
+# Without this keyward is FetchContent-only: it cannot be packaged for a distro
+# and find_package(keyward) does not work. Off when consumed as a subproject, so
+# a FetchContent user never installs our files.
+#
+# The awkward part is dependencies. keyward is a STATIC library, so its objects
+# do not contain monocypher's or libsodium's — a consumer has to link those too.
+# libsodium arrives via FetchContent from a wrapper with no install rules of its
+# own, so we install it ourselves, namespaced under keyward:: to keep it from
+# colliding with a system libsodium.
+option(KEYWARD_INSTALL "Generate install rules" ${PROJECT_IS_TOP_LEVEL})
+if(KEYWARD_INSTALL)
+  include(GNUInstallDirs)
+  include(CMakePackageConfigHelpers)
+
+  set(_keyward_install_targets keyward keyward_cli monocypher sodium)
+  install(TARGETS ${_keyward_install_targets}
+    EXPORT keywardTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+  install(DIRECTORY include/keyward DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+  install(EXPORT keywardTargets
+    FILE keywardTargets.cmake
+    NAMESPACE keyward::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/keyward)
+
+  configure_package_config_file(
+    packaging/keywardConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/keywardConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/keyward)
+  write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/keywardConfigVersion.cmake
+    COMPATIBILITY SameMajorVersion)
+  install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/keywardConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/keywardConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/keyward)
+
+  # pkg-config, for consumers that do not use CMake.
+  set(KEYWARD_PC_REQUIRES_PRIVATE "")
+  set(KEYWARD_PC_CFLAGS "")
+  if(LIBSECRET_FOUND)
+    string(APPEND KEYWARD_PC_REQUIRES_PRIVATE "libsecret-1 ")
+    string(APPEND KEYWARD_PC_CFLAGS "-DKEYWARD_HAVE_LIBSECRET ")
+  endif()
+  if(POLKIT_FOUND)
+    string(APPEND KEYWARD_PC_REQUIRES_PRIVATE "polkit-gobject-1 ")
+    string(APPEND KEYWARD_PC_CFLAGS "-DKEYWARD_HAVE_POLKIT ")
+  endif()
+  # Hop from <prefix>/<libdir>/pkgconfig back up to <prefix>, so the .pc can
+  # resolve its own prefix from ${pcfiledir} instead of a baked-in path.
+  file(RELATIVE_PATH KEYWARD_PC_REL_PREFIX
+       "${CMAKE_INSTALL_FULL_LIBDIR}/pkgconfig" "${CMAKE_INSTALL_PREFIX}")
+  string(REGEX REPLACE "/$" "" KEYWARD_PC_REL_PREFIX "${KEYWARD_PC_REL_PREFIX}")
+  configure_file(packaging/keyward.pc.in ${CMAKE_CURRENT_BINARY_DIR}/keyward.pc @ONLY)
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/keyward.pc
+          DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+
+  # The polkit action. PolkitAuthenticator reports Unavailable until this is in
+  # place, so shipping the library without it leaves the tier permanently off.
+  if(POLKIT_FOUND)
+    install(FILES packaging/com.keyward.policy
+            DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/polkit-1/actions)
+  endif()
+endif()
+
 # --- tests ----------------------------------------------------------------
 # On by default when keyward is the top-level project; off when pulled in via
 # FetchContent by a consumer.
@@ -223,6 +313,7 @@ if(KEYWARD_BUILD_TESTS)
     GIT_SHALLOW    TRUE
   )
   set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)  # for MSVC
+  set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)  # test dep: never part of our package
   FetchContent_MakeAvailable(googletest)
 
   enable_testing()
