@@ -59,6 +59,20 @@ whether they must preserve the field count and order, leave `value` untouched wh
 returning false, actually mask `sensitive` fields, avoid persisting or logging
 what they collect, what to do with no TTY, or whether `collect` may throw.
 
+### The contract is non-negotiable — which makes the conformance suite the point
+
+**Decided 2026-08-20:** integrating teams implement the prompt window to
+keyward's specification, not to their own taste. keyward runs a small prompt that
+asks for exactly the fields the record's schema declares, with the sensitive ones
+marked. The host conforms; the contract does not bend.
+
+That is a defensible stance, and it has one consequence that cannot be skipped:
+**"as we restricted it" is only meaningful if it is written down and checkable.**
+Today it is neither — the load-bearing obligations live in the wrong file or only
+in our implementations' comments, and there is no way for an integrating team to
+verify their window conforms before shipping it. A non-negotiable contract with no
+specification and no conformance suite is just an expectation.
+
 ### What "everything needed" should mean
 
 1. **State the obligations where they are read** — in `authenticator.hpp` and
@@ -278,9 +292,13 @@ boundary's shape.
    rest hangs on.
 2. Does the shared object export the **C++ API at all**, or only the C ABI? Only-C
    is far easier to keep stable, but forces C++ users through a lossy interface.
-3. Does `Prompter` gain an **app-driven** (non-blocking) path so immediate-mode
-   GUIs can integrate in minutes, or do such hosts stay unsupported? The ImGui
-   example is the way to answer this with evidence.
+3. ~~Does `Prompter` gain an app-driven path?~~ **Answered 2026-08-20: no — the
+   contract is non-negotiable and hosts conform to it.** An integrating team
+   implements the prompt window *as keyward specifies it*: a small modal that
+   collects whatever fields the record's schema declares. `Prompter` stays
+   blocking. An immediate-mode host must therefore run a modal or block a worker;
+   the app-driven path stays parked with the ImGui example, as a possible future
+   accommodation rather than a requirement.
 4. How does the TUI ship — vendor FTXUI and hide it, require it as a system
    package, or offer the prompter as source the app compiles?
    (The Qt/GTK question is **answered**: keyward ships the contract and reference
