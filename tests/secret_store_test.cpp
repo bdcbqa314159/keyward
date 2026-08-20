@@ -7,6 +7,10 @@
 #include <memory>
 #include <vector>
 
+#if !defined(_WIN32)
+#include <sys/stat.h>  // inode check: proves the file is replaced, not rewritten
+#endif
+
 #include "keyward/fallback_secret_store.hpp"
 #include "keyward/file_secret_store.hpp"
 
@@ -49,6 +53,76 @@ TEST(FileSecretStore, RoundTrip) {
 #endif
 
   fs::remove_all(p.parent_path(), ec);
+}
+
+// The credentials file must be REPLACED, never rewritten in place.
+//
+// This is the property the old implementation lacked. It opened the real file
+// with std::ios::trunc, so anything interrupting the write — a crash, an OOM
+// kill, a full disk — left it empty or half-written, losing every credential in
+// it rather than just the one being stored.
+//
+// A genuine crash mid-write is not unit-testable, but the mechanism that makes
+// it safe leaves a precise signature: rename(2) swaps in a different file, so
+// the inode changes. Truncating in place keeps the same inode. Asserting the
+// inode changed is therefore a direct test of "was this an atomic replace?",
+// and it fails against the old implementation.
+//
+// The same mechanism is why a reader holding the file open keeps seeing a
+// complete, consistent snapshot while a writer replaces it.
+TEST(FileSecretStore, ReplacesTheFileRatherThanRewritingItInPlace) {
+#if defined(_WIN32)
+  GTEST_SKIP() << "inode semantics are POSIX; MoveFileEx provides the same guarantee";
+#else
+  const fs::path dir = fs::temp_directory_path() / "kw-atomic-replace";
+  fs::remove_all(dir);
+  const fs::path file = dir / "credentials";
+
+  keyward::FileSecretStore store(file);
+  store.set("jira", "ORIGINAL-TOKEN");
+
+  struct stat before {};
+  ASSERT_EQ(::stat(file.c_str(), &before), 0);
+
+  store.set("jira", "REPLACEMENT-TOKEN");
+
+  struct stat after {};
+  ASSERT_EQ(::stat(file.c_str(), &after), 0);
+
+  EXPECT_NE(before.st_ino, after.st_ino)
+      << "the file kept its inode, so it was rewritten in place — an interrupted "
+         "write would have destroyed every credential in it";
+  EXPECT_EQ(store.get("jira").value_or("<lost>"), "REPLACEMENT-TOKEN");
+
+  // No temp file may be left holding secrets.
+  int leftovers = 0;
+  for (const auto& entry : fs::directory_iterator(dir)) {
+    if (entry.path().filename().string().find("kwtmp") != std::string::npos) ++leftovers;
+  }
+  EXPECT_EQ(leftovers, 0) << "a write left a temp file containing credentials behind";
+
+  fs::remove_all(dir);
+#endif
+}
+
+// The file must be owner-only from the moment it exists. The old path created it
+// under the ambient umask and chmod'd afterwards, leaving a window in which the
+// credentials file was readable by others.
+TEST(FileSecretStore, IsOwnerOnlyImmediately) {
+#if defined(_WIN32)
+  GTEST_SKIP() << "POSIX mode bits do not apply; the DACL test covers Windows";
+#else
+  const fs::path dir = fs::temp_directory_path() / "kw-atomic-perms";
+  fs::remove_all(dir);
+  const fs::path file = dir / "credentials";
+
+  keyward::FileSecretStore store(file);
+  store.set("jira", "TOKEN");
+
+  const auto mode = fs::status(file).permissions() & fs::perms::mask;
+  EXPECT_EQ(mode, fs::perms::owner_read | fs::perms::owner_write) << "credentials file is not 0600";
+  fs::remove_all(dir);
+#endif
 }
 
 TEST(FileSecretStore, ListsStoredNames) {
