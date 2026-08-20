@@ -72,6 +72,48 @@ what they collect, what to do with no TTY, or whether `collect` may throw.
 3. **Keep CLI and TUI as reference implementations** — and actually ship them,
    which today the TUI does not do (below).
 
+
+### The examples are the acceptance test, and one of them fails today
+
+**The bar (2026-08-20):** a CLI integration must be implementable *in minutes*
+given how smooth the library is — and the same for other frameworks. That is the
+point of the library, so it is the point of the examples. Three were named:
+**CLI**, **FTXUI** (the founding use case), and **a GUI such as ImGui**.
+
+Graded against that bar, using what the code actually does:
+
+| Example | Minutes today? | Why |
+|---|---|---|
+| CLI | **yes** | `collect()` blocks; a terminal read blocks. The shapes match. |
+| FTXUI | **only if the app cedes the terminal** | `TuiPrompter` satisfies `collect()` by running `screen.Loop(renderer)` — a *nested* event loop. An app that already owns a `ScreenInteractive` loop cannot host a second one. |
+| ImGui | **no** | Immediate mode renders one frame per iteration and **cannot block**. There is no way to implement `bool collect()` in an ImGui app without pumping a nested render loop (invasive, framework-specific) or blocking a worker thread while the UI thread draws — which needs threading guarantees the contract does not make. |
+
+So the ImGui example is not a nice-to-have: it is the case that **proves the
+contract is the wrong shape** for a whole class of hosts. Immediate-mode GUIs,
+event-driven apps and anything with a main loop it owns all hit the same wall.
+Writing it is how that gets discovered concretely rather than argued about.
+
+### The fix is small, because the code is already split
+
+`Vault::prompt_and_save` does two separable things: it **builds** a
+`std::vector<PromptField>` from `T::schema()`, then it **consumes** a filled one.
+Only the middle line calls `collect()`. Exposing those two halves gives an
+**app-driven** path alongside the blocking one:
+
+- the app asks keyward which fields a record needs (name, sensitivity, prefill);
+- the app renders them however it likes, across as many frames as it likes;
+- the app hands the filled values back and keyward saves them.
+
+That is a natural fit for ImGui and costs no expressiveness for the others —
+`Prompter` stays exactly as it is for CLI and standalone-TUI hosts, which is where
+blocking is the *right* answer. Both paths share the wiping and `from_fields`
+logic that already exists.
+
+**Recommendation: write the ImGui example first.** It is the one that fails, so it
+is the one that tells us whether the app-driven path is needed and what shape it
+wants. The CLI and FTXUI examples then document a contract already known to work,
+rather than three examples all confirming the easy case.
+
 ### The TUI genuinely does not ship
 
 - `keyward_tui` is **not installed at all**. The install set is
@@ -229,13 +271,16 @@ boundary's shape.
    rest hangs on.
 2. Does the shared object export the **C++ API at all**, or only the C ABI? Only-C
    is far easier to keep stable, but forces C++ users through a lossy interface.
-3. How does the TUI ship — vendor FTXUI and hide it, require it as a system
+3. Does `Prompter` gain an **app-driven** (non-blocking) path so immediate-mode
+   GUIs can integrate in minutes, or do such hosts stay unsupported? The ImGui
+   example is the way to answer this with evidence.
+4. How does the TUI ship — vendor FTXUI and hide it, require it as a system
    package, or offer the prompter as source the app compiles?
    (The Qt/GTK question is **answered**: keyward ships the contract and reference
    prompters, not a prompter per toolkit.)
-4. Which bindings actually matter first — Python (where `keyring` interop already
+5. Which bindings actually matter first — Python (where `keyring` interop already
    works and may make bindings less necessary), or something else?
-5. `THREAT_MODEL.md` says *"not independently audited — do not entrust other
+6. `THREAT_MODEL.md` says *"not independently audited — do not entrust other
    people's high-value secrets."* In a library others ship, their users inherit
    that without reading it. Does it stay as-is, move to the README, or does the
    gap get closed before 1.0?
