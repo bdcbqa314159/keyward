@@ -23,6 +23,46 @@ what is below.
 3. **Your headers are a contract.** Their *shape* cannot depend on how you were
    built.
 
+## Problem 0 — the UI components are not actually shippable
+
+**Stated requirement (2026-08-20):** keyward provides *everything needed* — if an
+app wants a CLI or a GUI for its secrets, keyward supplies it rather than making
+the app build one. That is a headline feature, not a nicety, which makes the
+current state a contradiction:
+
+- `keyward_tui` is **not installed at all**. The install set is
+  `keyward keyward_cli monocypher sodium`; the prefix contains no TUI.
+- `KEYWARD_BUILD_TUI` defaults to `PROJECT_IS_TOP_LEVEL`, so a **FetchContent
+  consumer does not get the TUI by default** either. It exists for us, not for them.
+- `keyward_tui` links `ftxui::component/dom/screen`, which are FetchContent
+  targets. `FTXUI_ENABLE_INSTALL` is now `OFF` (set while stopping FTXUI polluting
+  our prefix — right for hygiene), so an installed `keyward_tui` would have
+  dependencies that do not exist on the target machine.
+
+So today the CLI ships and the GUI does not. Fixing it needs three decisions,
+because "ship a TUI inside someone else's app" is harder than shipping a library:
+
+**Who owns the terminal?** `TuiPrompter` runs an FTXUI event loop. Inside a host
+application that already owns the terminal — or is a GUI app with no TTY at all —
+that is not a detail. The prompter needs a documented contract: what it does to
+terminal state, whether it restores it, what happens with no TTY, and whether it
+is safe to call from a thread that is not the host's main loop.
+
+**How does FTXUI reach the user's machine?** Either vendor and hide it (same
+problem as libsodium, one more dependency), require it as a system package, or
+keep the TUI as a source-drop-in the app compiles itself. The third is unusual but
+fits "we provide everything needed" without imposing our dependency graph.
+
+**What does a GUI toolkit that is not FTXUI do?** An app built on Qt or GTK cannot
+use an FTXUI prompter at all. The `Prompter` interface is the right seam — it is
+already abstract — so the honest framing is: keyward ships *reference* prompters
+(CLI, TUI) and any app can supply its own. That should be stated, because
+"everything needed" otherwise implies a Qt prompter exists.
+
+This is Problem 0 because it is a stated requirement that is currently unmet, and
+because the answer to "how does FTXUI ship" is the same class of question as
+Problem 1 (what we vendor and how we hide it) — they should be decided together.
+
 ## Problem 1 — 113 global symbols that can collide (highest risk)
 
 Measured on the installed prefix:
@@ -132,6 +172,9 @@ and every one of the 18 throw sites converted to an error enum at the boundary
 
 ## Ordering, and why
 
+0. **Problem 0's decisions**, at least the FTXUI one, since it shares an answer
+   with Problem 1. Installing `keyward_tui` is otherwise a one-line change that
+   ships something broken.
 1. **Problem 2** (header stability). Smallest, purely mechanical, and everything
    else binds to these headers — doing it later means breaking consumers twice.
 2. **Problem 1, Monocypher part** (rename to `keyward_*`). Mechanical, removes 44
@@ -155,9 +198,13 @@ boundary's shape.
    rest hangs on.
 2. Does the shared object export the **C++ API at all**, or only the C ABI? Only-C
    is far easier to keep stable, but forces C++ users through a lossy interface.
-3. Which bindings actually matter first — Python (where `keyring` interop already
+3. How does the TUI ship — vendor FTXUI and hide it, require it as a system
+   package, or offer the prompter as source the app compiles? And does
+   "everything needed" extend to a Qt/GTK prompter, or is the promise "reference
+   prompters plus a seam for your own"?
+4. Which bindings actually matter first — Python (where `keyring` interop already
    works and may make bindings less necessary), or something else?
-4. `THREAT_MODEL.md` says *"not independently audited — do not entrust other
+5. `THREAT_MODEL.md` says *"not independently audited — do not entrust other
    people's high-value secrets."* In a library others ship, their users inherit
    that without reading it. Does it stay as-is, move to the README, or does the
    gap get closed before 1.0?
