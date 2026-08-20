@@ -10,6 +10,12 @@ holds a secret for microseconds. An agent is a **process that stays alive holdin
 authority**, reachable by other processes. That is a different kind of thing and
 deserves a different level of scrutiny.
 
+> **Largely retired (2026-08-20).** keyward is a library others ship inside their
+> apps, and such a library has no business spawning a daemon — if an agent exists
+> it belongs to the *app*, not to us. The in-process `CachingAuthenticator` (see
+> Phasing) remains worth building; the rest of this document is kept as the record
+> of why the daemon was not. See [EMBEDDABILITY.md](EMBEDDABILITY.md).
+
 ## Decision 1 — does the agent hold secrets, or only decisions?
 
 This is the fork that determines everything else. The sketch says
