@@ -109,10 +109,17 @@ That is a natural fit for ImGui and costs no expressiveness for the others —
 blocking is the *right* answer. Both paths share the wiping and `from_fields`
 logic that already exists.
 
-**Recommendation: write the ImGui example first.** It is the one that fails, so it
-is the one that tells us whether the app-driven path is needed and what shape it
-wants. The CLI and FTXUI examples then document a contract already known to work,
-rather than three examples all confirming the easy case.
+**Recommendation: write the ImGui example first** — it is the one that fails, so
+it is the one that tells us whether the app-driven path is needed and what shape
+it wants.
+
+**Deferred (2026-08-20).** ImGui and the app-driven path are parked until a
+development round closes on Windows and macOS. Recorded here so the reasoning is
+not rediscovered: the blocking `bool collect()` shape is a known limitation for
+immediate-mode and main-loop-owning hosts, the fix looks like a small split of
+`prompt_and_save`, and this analysis is **reasoned from ImGui's programming
+model, not measured against a build** — treat it as a strong hypothesis, not a
+finding, until the example exists.
 
 ### The TUI genuinely does not ship
 
