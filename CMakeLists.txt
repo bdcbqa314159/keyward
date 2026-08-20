@@ -346,6 +346,11 @@ if(KEYWARD_BUILD_TESTS)
   target_link_libraries(secret_box_tests PRIVATE keyward GTest::gtest_main)
   gtest_discover_tests(secret_box_tests)
 
+  # Low-level KDF + AEAD primitives beneath seal/unseal (derive-once, reuse).
+  add_executable(crypto_primitives_tests tests/crypto_primitives_test.cpp)
+  target_link_libraries(crypto_primitives_tests PRIVATE keyward GTest::gtest_main)
+  gtest_discover_tests(crypto_primitives_tests)
+
   # Task 4 — record codec. Red until src/record_codec.cpp is implemented.
   add_executable(record_codec_tests tests/record_codec_test.cpp)
   target_link_libraries(record_codec_tests PRIVATE keyward GTest::gtest_main)
