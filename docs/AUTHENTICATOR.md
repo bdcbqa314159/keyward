@@ -92,6 +92,13 @@ Per-process by default; the **agent** holds it cross-process.
 
 ## The agent (optional, last)
 
+> **Scoped in [AGENT_SCOPE.md](AGENT_SCOPE.md)** — which argues for building less
+> than this section sketches. In short: make the agent an *authorizer* that holds
+> approval state, not a *secret holder*; prefer systemd socket activation over
+> on-demand spawn; treat the protocol as a fuzzed parser; and build the
+> in-process `CachingAuthenticator` first, because most of the perceived benefit
+> is the TTL cache rather than the daemon.
+
 - Long-lived, **code-signed** daemon; owns keychain access (stable identity → no
   client rebuild-nag). Holds the biometric session + cross-process TTL cache.
 - Transport: a **0600 unix domain socket** (`$XDG_RUNTIME_DIR/keyward-agent.sock`,
