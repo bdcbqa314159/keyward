@@ -2,6 +2,15 @@
 
 #include <fstream>
 #include <stdexcept>
+
+#include "keyward/secure_string.hpp"
+
+#if !defined(_WIN32)
+#include <fcntl.h>
+#include <unistd.h>
+
+#include <cerrno>
+#endif
 #include <string>
 #include <utility>
 #include <vector>
@@ -80,29 +89,110 @@ std::vector<std::pair<std::string, std::string>> readAll(const fs::path& p) {
   return out;
 }
 
+// Serialize the pairs once, into storage that zeroes itself. The buffer holds
+// every secret in the store, so it must not be left in freed heap.
+SecureString serialize(const std::vector<std::pair<std::string, std::string>>& kv) {
+  SecureString out;
+  for (const auto& [k, v] : kv) {
+    out.append(k.begin(), k.end());
+    out.push_back('=');
+    out.append(v.begin(), v.end());
+    out.push_back('\n');
+  }
+  return out;
+}
+
+// Replace `p` atomically: write a fresh temp file beside it, flush it to disk,
+// then rename over the target.
+//
+// The old code opened the real file with std::ios::trunc and wrote into it. Two
+// things were wrong with that. A crash, OOM kill or power loss between the
+// truncate and the last write left the file EMPTY OR PARTIAL — losing every
+// credential in it, not just the one being written — and two writers racing
+// produced an interleaved file. rename(2) is atomic within a filesystem, so a
+// reader or a crash now sees either the whole old file or the whole new one.
+//
+// It also closes a permissions window: the temp file is owner-only from the
+// moment it exists, where the old path created the real file under the ambient
+// umask and only chmod'd it afterwards.
+void writeAtomically(const fs::path& p, const SecureString& content) {
+#if defined(_WIN32)
+  const fs::path tmp = p.string() + ".kwtmp";
+  {
+    std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+    if (!out) throw std::runtime_error("cannot write " + tmp.string());
+    out.write(content.data(), static_cast<std::streamsize>(content.size()));
+    if (!out) throw std::runtime_error("cannot write " + tmp.string());
+  }
+  std::error_code ec;
+  try {
+    // Lock it down BEFORE it becomes the real file, so the credentials file is
+    // never briefly readable by others.
+    restrictToOwnerWin(tmp);
+    // ReplaceExisting because rename over an existing file fails on Windows;
+    // WriteThrough so the move is on disk before we return.
+    if (!MoveFileExW(tmp.wstring().c_str(), p.wstring().c_str(),
+                     MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+      throw std::runtime_error("cannot replace " + p.string());
+    }
+  } catch (...) {
+    fs::remove(tmp, ec);  // never leave a temp file holding secrets
+    throw;
+  }
+#else
+  std::string pattern = p.string() + ".kwtmpXXXXXX";
+  std::vector<char> path_buf(pattern.begin(), pattern.end());
+  path_buf.push_back('\0');
+
+  // mkstemp creates with 0600 — owner-only from the instant it exists.
+  int fd = ::mkstemp(path_buf.data());
+  if (fd < 0) throw std::runtime_error("cannot create a temp file beside " + p.string());
+  const fs::path tmp(path_buf.data());
+
+  try {
+    const char* data = content.data();
+    std::size_t left = content.size();
+    while (left > 0) {
+      const ssize_t n = ::write(fd, data, left);
+      if (n < 0) {
+        if (errno == EINTR) continue;
+        throw std::runtime_error("cannot write " + tmp.string());
+      }
+      data += n;
+      left -= static_cast<std::size_t>(n);
+    }
+    if (::fsync(fd) != 0) throw std::runtime_error("cannot flush " + tmp.string());
+    if (::close(fd) != 0) {
+      fd = -1;
+      throw std::runtime_error("cannot close " + tmp.string());
+    }
+    fd = -1;
+    if (::rename(tmp.c_str(), p.c_str()) != 0) {
+      throw std::runtime_error("cannot replace " + p.string());
+    }
+  } catch (...) {
+    if (fd >= 0) ::close(fd);
+    std::error_code ec;
+    fs::remove(tmp, ec);  // never leave a temp file holding secrets
+    throw;
+  }
+
+  // The contents were fsynced, but the directory entry created by rename was
+  // not. Without this a power failure can lose the rename itself.
+  const int dir_fd = ::open(p.parent_path().c_str(), O_RDONLY | O_DIRECTORY);
+  if (dir_fd >= 0) {
+    ::fsync(dir_fd);
+    ::close(dir_fd);
+  }
+#endif
+}
+
 void writeAll(const fs::path& p, const std::vector<std::pair<std::string, std::string>>& kv) {
   std::error_code ec;
   fs::create_directories(p.parent_path(), ec);
   fs::permissions(p.parent_path(), fs::perms::owner_all, fs::perm_options::replace, ec);  // 0700
-  {
-    std::ofstream out(p, std::ios::trunc);
-    if (!out) throw std::runtime_error("cannot write " + p.string());
-    for (const auto& [k, v] : kv) out << k << "=" << v << "\n";
-  }
-#if defined(_WIN32)
-  // A real owner-only DACL — the 0600 attribute is not access control here. Fail
-  // closed: if we can't lock the file down, delete it rather than leave a
-  // world-readable secret behind.
-  try {
-    restrictToOwnerWin(p);
-  } catch (...) {
-    fs::remove(p, ec);
-    throw;
-  }
-#else
-  fs::permissions(p, fs::perms::owner_read | fs::perms::owner_write,  // 0600
-                  fs::perm_options::replace, ec);
-#endif
+  const SecureString content = serialize(kv);
+  writeAtomically(p, content);
 }
 
 }  // namespace

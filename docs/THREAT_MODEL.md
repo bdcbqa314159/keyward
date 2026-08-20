@@ -98,6 +98,20 @@ keyward to store and retrieve.
   in a fuzz build; the fuzzer therefore covers parse-and-reject, not
   parse-and-accept. Mutation could never reach accept anyway (128-bit MAC), and
   the accept path is covered by `secret_box_tests` in a normal build.
+- ✅ **File-store writes are atomic and durable.** The credentials file is
+  replaced via a temp file + `rename` (POSIX) / `MoveFileEx` with
+  `REPLACE_EXISTING|WRITE_THROUGH` (Windows), with `fsync` of both the file and
+  the directory entry. It previously opened the real file with `std::ios::trunc`,
+  so a crash, OOM kill or full disk mid-write left it empty or half-written —
+  losing **every** credential in it, not just the one being stored — and two
+  writers produced an interleaved file. The temp file is owner-only from the
+  instant it exists, which also closes a window where the real file was briefly
+  readable under the ambient umask. Pinned by
+  `FileSecretStore.ReplacesTheFileRatherThanRewritingItInPlace`, which detects an
+  in-place rewrite by its inode.
+  Still outstanding: concurrent writers can *lose an update* (each does
+  read-modify-write), which atomicity does not address — that needs advisory
+  locking.
 - ⚠️ **The file store writes plaintext.** `0600` is access control, not
   encryption — anyone who gets the file (backup, sync folder, disk image, support
   bundle) gets the secrets. `seal`/`unseal` exist and are fuzzed but have no
