@@ -1,8 +1,14 @@
 #include "keyward/file_secret_store.hpp"
 
 #include <fstream>
+#include <iterator>
+#include <optional>
 #include <stdexcept>
 
+#include "keyward/crypto_primitives.hpp"      // aead_seal/aead_open, kNonceSize, kSaltSize
+#include "keyward/encrypted_file_format.hpp"  // EncryptedFile, parse/format, is_encrypted_file
+#include "keyward/random.hpp"                 // random_bytes
+#include "keyward/secure_memory.hpp"          // secure_zero
 #include "keyward/secure_string.hpp"
 
 #if !defined(_WIN32)
@@ -195,30 +201,136 @@ void writeAll(const fs::path& p, const std::vector<std::pair<std::string, std::s
   writeAtomically(p, content);
 }
 
+// Read the whole file as text (empty if absent). An encrypted file's contents
+// are ciphertext + base64, not secrets, so a plain string is fine here.
+std::string readFileText(const fs::path& p) {
+  std::ifstream in(p, std::ios::binary);
+  if (!in) return {};
+  return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+}
+
+// Write an encrypted file (magic + salt + base64 sealed entries), reusing the
+// same 0700-dir + owner-only + atomic-replace path as the plaintext writer.
+void writeEncrypted(const fs::path& p, const EncryptedFile& ef) {
+  std::error_code ec;
+  fs::create_directories(p.parent_path(), ec);
+  fs::permissions(p.parent_path(), fs::perms::owner_all, fs::perm_options::replace, ec);  // 0700
+  const std::string text = format_encrypted_file(ef);
+  writeAtomically(p, SecureString(text.begin(), text.end()));
+}
+
 }  // namespace
 
 FileSecretStore::FileSecretStore(fs::path path) : path_(std::move(path)) {}
 
-std::optional<std::string> FileSecretStore::get(const std::string& name) {
-  for (const auto& [k, v] : readAll(path_))
+FileSecretStore::FileSecretStore(fs::path path, std::unique_ptr<KeyProvider> key_provider)
+    : path_(std::move(path)), key_provider_(std::move(key_provider)) {}
+
+const Secret& FileSecretStore::ensureKey(std::string_view salt) {
+  if (!key_) {
+    salt_ = std::string(salt);
+    std::optional<Secret> k = key_provider_->unlock(salt_, "unlock " + path_.filename().string());
+    if (!k) throw std::runtime_error("keyward: passphrase entry cancelled for " + path_.string());
+    key_ = std::move(*k);
+  }
+  return *key_;
+}
+
+// Names in a plaintext file whose value is non-empty (empty value == absent).
+namespace {
+std::optional<std::string> plaintextGet(const fs::path& p, const std::string& name) {
+  for (const auto& [k, v] : readAll(p))
     if (k == name && !v.empty()) return v;
+  return std::nullopt;
+}
+}  // namespace
+
+std::optional<std::string> FileSecretStore::get(const std::string& name) {
+  if (!encrypted()) return plaintextGet(path_, name);
+
+  const std::string text = readFileText(path_);
+  if (text.empty()) return std::nullopt;
+  if (!is_encrypted_file(text)) return plaintextGet(path_, name);  // legacy, not yet migrated
+
+  std::optional<EncryptedFile> ef = parse_encrypted_file(text);
+  if (!ef) throw std::runtime_error("keyward: corrupt encrypted store " + path_.string());
+  for (const auto& [k, blob] : ef->entries) {
+    if (k != name) continue;
+    if (blob.size() < kNonceSize)
+      throw std::runtime_error("keyward: truncated entry '" + name + "'");
+    ensureKey(ef->salt);
+    std::string_view nonce(blob.data(), kNonceSize);
+    std::string_view sealed(blob.data() + kNonceSize, blob.size() - kNonceSize);
+    std::optional<Secret> pt = aead_open(*key_, nonce, sealed);
+    if (!pt)
+      throw std::runtime_error("keyward: cannot decrypt '" + name +
+                               "' (wrong passphrase or tampered)");
+    return std::string(pt->view());
+  }
   return std::nullopt;
 }
 
 void FileSecretStore::set(const std::string& name, std::string_view value) {
-  auto kv = readAll(path_);
+  if (!encrypted()) {
+    auto kv = readAll(path_);
+    bool found = false;
+    for (auto& e : kv)
+      if (e.first == name) {
+        e.second = value;
+        found = true;
+        break;
+      }
+    if (!found) kv.emplace_back(name, value);
+    writeAll(path_, kv);
+    return;
+  }
+
+  const std::string text = readFileText(path_);
+  EncryptedFile ef;
+  if (!text.empty() && is_encrypted_file(text)) {
+    std::optional<EncryptedFile> parsed = parse_encrypted_file(text);
+    if (!parsed) throw std::runtime_error("keyward: corrupt encrypted store " + path_.string());
+    ef = std::move(*parsed);
+    ensureKey(ef.salt);  // keep the file's existing salt so cached key stays valid
+  } else {
+    ef.salt = random_bytes(kSaltSize);  // new file, or legacy plaintext -> migrate
+    ensureKey(ef.salt);
+    if (!text.empty()) {  // migrate: re-seal every legacy entry under the new key
+      for (auto& [k, v] : readAll(path_)) {
+        std::string nonce = random_bytes(kNonceSize);
+        ef.entries.emplace_back(k, nonce + aead_seal(*key_, nonce, v));
+        secure_zero(v.data(), v.size());  // wipe the legacy plaintext once re-sealed
+      }
+    }
+  }
+
+  std::string nonce = random_bytes(kNonceSize);
+  std::string blob = nonce + aead_seal(*key_, nonce, value);
   bool found = false;
-  for (auto& e : kv)
+  for (auto& e : ef.entries)
     if (e.first == name) {
-      e.second = value;
+      e.second = std::move(blob);
       found = true;
       break;
     }
-  if (!found) kv.emplace_back(name, value);
-  writeAll(path_, kv);
+  if (!found) ef.entries.emplace_back(name, std::move(blob));
+  writeEncrypted(path_, ef);
 }
 
 void FileSecretStore::remove(const std::string& name) {
+  const std::string text = encrypted() ? readFileText(path_) : std::string{};
+  if (encrypted() && !text.empty() && is_encrypted_file(text)) {
+    // Drop the entry keeping the others' ciphertext untouched — no key needed.
+    std::optional<EncryptedFile> ef = parse_encrypted_file(text);
+    if (!ef) throw std::runtime_error("keyward: corrupt encrypted store " + path_.string());
+    EncryptedFile out;
+    out.salt = ef->salt;
+    for (auto& e : ef->entries)
+      if (e.first != name) out.entries.push_back(std::move(e));
+    writeEncrypted(path_, out);
+    return;
+  }
+  // Plaintext mode, or a not-yet-migrated legacy file: rewrite plaintext.
   std::vector<std::pair<std::string, std::string>> out;
   for (auto& e : readAll(path_))
     if (e.first != name) out.push_back(std::move(e));
@@ -226,6 +338,16 @@ void FileSecretStore::remove(const std::string& name) {
 }
 
 std::vector<std::string> FileSecretStore::list() {
+  if (encrypted()) {
+    const std::string text = readFileText(path_);
+    if (!text.empty() && is_encrypted_file(text)) {
+      std::optional<EncryptedFile> ef = parse_encrypted_file(text);
+      if (!ef) throw std::runtime_error("keyward: corrupt encrypted store " + path_.string());
+      std::vector<std::string> names;
+      for (const auto& [k, blob] : ef->entries) names.push_back(k);  // no key needed
+      return names;
+    }
+  }
   std::vector<std::string> names;
   for (const auto& [k, v] : readAll(path_))
     if (!v.empty()) names.push_back(k);  // empty value == absent, matching get()

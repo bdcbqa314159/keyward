@@ -388,6 +388,12 @@ if(KEYWARD_BUILD_TESTS)
   target_link_libraries(encrypted_file_format_tests PRIVATE keyward GTest::gtest_main)
   gtest_discover_tests(encrypted_file_format_tests)
 
+  # FileSecretStore encryption mode (round-trip, keyless list/remove, migration,
+  # fail-closed on wrong passphrase / tamper).
+  add_executable(file_store_encryption_tests tests/file_store_encryption_test.cpp)
+  target_link_libraries(file_store_encryption_tests PRIVATE keyward GTest::gtest_main)
+  gtest_discover_tests(file_store_encryption_tests)
+
   # FallbackAuthenticator policy (fakes) + a link/availability smoke of Biometric.
   add_executable(fallback_authenticator_tests tests/fallback_authenticator_test.cpp)
   target_link_libraries(fallback_authenticator_tests PRIVATE keyward GTest::gtest_main)
