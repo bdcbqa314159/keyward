@@ -13,7 +13,7 @@ owns:
 
 - **correct integration** with each OS store,
 - a **flexible credential schema** (declare a record's fields once),
-- **access control** (an authenticator layer, later),
+- **access control** (the authenticator layer — passphrase / biometric / fallback),
 - **not leaking secrets** while they pass through your process.
 
 The practical consequence: the OS-backed path needs **no full cryptographic
@@ -139,24 +139,19 @@ weaker store.
 
 ## Roadmap
 
-Built and merged: `Secret` (zeroizing, constant-time compare); `seal`/`unseal`
-(Argon2id + XChaCha20-Poly1305, Monocypher); `SecretStore` + macOS Keychain +
-file + fallback tiers.
+**Shipped:** the record codec (versioned, bounds-checked); the typed
+`Schema`/`Vault` facade; `Secret` on libsodium secure memory + constant-time
+compare; native backends on **macOS Keychain, Windows Credential Manager, and
+Linux Secret Service**; the **encrypted-file fallback** (Argon2id +
+XChaCha20-Poly1305, opt-in via `KeyProvider` or `KEYWARD_PASSPHRASE`); CLI + TUI
+prompters; the authenticator layer (passphrase / biometric / fallback); threat
+model, fuzzing, ASan/UBSan/LSan CI, and install/`find_package`/pkg-config.
 
-Next, in order:
-
-1. **Record codec** — serialize a record's fields to bytes and safely back
-   (length-prefixed, bounds-checked parse).
-2. **Typed `Schema` / `Vault`** facade over `SecretStore`.
-3. **Format version byte** — so the on-disk/on-item format can evolve.
-4. **libsodium hardening pass** — secure memory for `Secret`, OS CSPRNG,
-   constant-time compare.
-5. **Linux libsecret + Windows Credential Manager** backends.
-6. **Threat-model doc + fuzzing** the parse paths.
-
-Deferred / review-gated: **authenticator → agent** (biometric / passphrase /
-TTL, then an ssh-agent-style local daemon). Alongside: install/export packaging
-and the TUI app.
+**Remaining:** the review-gated **agent daemon** (ssh-agent-style; see
+[AUTHENTICATOR.md](AUTHENTICATOR.md) and [AGENT_SCOPE.md](AGENT_SCOPE.md)); a 1.0
+freeze; and an **independent audit** (see [SECURITY_ASSESSMENT.md](SECURITY_ASSESSMENT.md)) —
+the gate for entrusting others' high-value secrets. keyward is personal-grade
+until then.
 
 **Compatibility north star:** a secret written by Python `keyring` is readable
 by keyward and vice versa, green on all three OSes.
