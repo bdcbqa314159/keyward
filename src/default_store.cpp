@@ -24,6 +24,15 @@ fs::path homeBase() {
   return fs::current_path();
 }
 
+// Build the file tier: encrypted when a key source is supplied, plaintext when
+// not. Only called on platforms where the file store can actually hold secrets.
+std::unique_ptr<SecretStore> makeFileStore(const std::string& app,
+                                           std::unique_ptr<KeyProvider> key_source) {
+  if (key_source)
+    return std::make_unique<FileSecretStore>(defaultStorePath(app), std::move(key_source));
+  return std::make_unique<FileSecretStore>(defaultStorePath(app));
+}
+
 }  // namespace
 
 fs::path defaultStorePath(const std::string& app) {
@@ -35,29 +44,37 @@ fs::path defaultStorePath(const std::string& app) {
 }
 
 std::unique_ptr<SecretStore> defaultSecretStore(const std::string& app) {
+  return defaultSecretStore(app, nullptr);
+}
+
+std::unique_ptr<SecretStore> defaultSecretStore(const std::string& app,
+                                                std::unique_ptr<KeyProvider> key_source) {
 #if defined(__APPLE__)
-  // Keychain (namespaced to `app`) in front; the 0600 file stays readable so an
+  // Keychain (namespaced to `app`) in front; the file tier stays readable so an
   // existing secret still works and migrates to the Keychain on the next `set`.
-  return std::make_unique<FallbackSecretStore>(
-      std::make_unique<KeychainSecretStore>(app),
-      std::make_unique<FileSecretStore>(defaultStorePath(app)));
+  // The file tier encrypts if a key source was supplied.
+  return std::make_unique<FallbackSecretStore>(std::make_unique<KeychainSecretStore>(app),
+                                               makeFileStore(app, std::move(key_source)));
 #elif defined(_WIN32)
   // Windows = Credential Manager ONLY — no file fallback. CredMan is itself
   // DPAPI-encrypted, OS-managed storage; a self-managed 0600 file on Windows is
   // just a read-only attribute, not a real ACL, so falling back to it would be a
   // silent downgrade. Fail closed instead (the backend throws on any error).
+  // There is no file tier here, so the key source is unused.
+  (void)key_source;
   return std::make_unique<WindowsCredentialStore>(app);
 #elif defined(__linux__) && defined(KEYWARD_HAVE_LIBSECRET)
-  // The user's keyring (namespaced to `app`) in front, mirroring macOS; the 0600
-  // file stays readable so an existing secret still works and migrates to the
+  // The user's keyring (namespaced to `app`) in front, mirroring macOS; the file
+  // tier stays readable so an existing secret still works and migrates to the
   // keyring on the next `set`. Unlike Windows we keep the fallback: a 0600 file
   // on Linux IS a real permission bit, so it's a degraded store, not a fake one.
-  return std::make_unique<FallbackSecretStore>(
-      std::make_unique<SecretServiceStore>(app),
-      std::make_unique<FileSecretStore>(defaultStorePath(app)));
+  return std::make_unique<FallbackSecretStore>(std::make_unique<SecretServiceStore>(app),
+                                               makeFileStore(app, std::move(key_source)));
 #else
-  // No native vault available (Linux without libsecret, BSD, anything else).
-  return std::make_unique<FileSecretStore>(defaultStorePath(app));
+  // No native vault available (Linux without libsecret, BSD, anything else): the
+  // file store is the SOLE tier, so encrypting it (if a key source is given) is
+  // where it matters most.
+  return makeFileStore(app, std::move(key_source));
 #endif
 }
 
