@@ -10,13 +10,20 @@ audited OS stores. keyward's job is correct integration, a flexible credential
 schema, and not leaking secrets while they pass through your process. See
 [docs/DESIGN.md](docs/DESIGN.md) for the full shape and roadmap.
 
-> **Status — in progress.** Working today: the `SecretStore` interface with a
-> three-tier resolver (env var → OS keychain → `0600` file), a macOS Keychain
-> backend, and a passphrase-based encrypted blob (`seal`/`unseal`, Argon2id +
-> XChaCha20-Poly1305 via vendored Monocypher). Next up: the schema-driven
-> typed-record `Vault` API, the Linux/Windows backends, an in-process hardening
-> pass (libsodium secure memory), and a small TUI front-end. Not yet reviewed
-> for production use — see [SECURITY.md](SECURITY.md).
+> **Status — feature-complete core, pre-1.0.** Shipped: schema-typed records over
+> a `Vault`; **native backends on macOS Keychain, Windows Credential Manager, and
+> Linux Secret Service** (with an *encrypted*-file fallback); CLI + TUI prompters;
+> an access gate (passphrase / biometric / fallback); libsodium secure-memory
+> hardening. The remaining review-gated epic is the **agent daemon**.
+>
+> **Trust bound (read before use):** keyward is **personal-grade and not
+> independently audited** — suitable for *your own* credentials on *your own*
+> machine (macOS strongest). **Do not** entrust others' high-value secrets,
+> shared/server machines, or catastrophic-if-breached credentials to it yet — for
+> that, use a certified secrets manager (HashiCorp Vault, or a cloud Secret
+> Manager) with short-lived credentials. See [SECURITY.md](SECURITY.md),
+> [THREAT_MODEL.md](docs/THREAT_MODEL.md), and the audit plan in
+> [SECURITY_ASSESSMENT.md](docs/SECURITY_ASSESSMENT.md).
 
 ## Use today
 
@@ -42,11 +49,11 @@ std::string blob = keyward::seal("s3cr3t", passphrase);   // salt‖nonce‖mac�
 if (auto plain = keyward::unseal(blob, passphrase)) { /* use *plain */ }
 ```
 
-## Where it's heading
+## Typed records — the `Vault` API
 
-The developer declares a credential type and its fields; keyward stores the
-record as one item in the OS credential manager, and a TUI collects it on first
-run. Sketch (**not yet implemented** — see [docs/DESIGN.md](docs/DESIGN.md)):
+Declare a credential type and its fields; keyward stores the whole record as one
+item in the OS credential manager, and a prompter collects it on first run. The
+schema drives storage, masking, and typed access from a single declaration:
 
 ```cpp
 struct JiraCredential {
@@ -59,7 +66,27 @@ struct JiraCredential {
 };
 
 keyward::Vault vault{"myapp"};
-auto jira = vault.ensure<JiraCredential>("jira", tui);   // prompt on first run, then load
+keyward::CliPrompter cli;                                 // or keyward::TuiPrompter
+auto jira = vault.ensure<JiraCredential>("jira", cli);   // prompt on first run, then load
+```
+
+An optional access gate can require a passphrase or biometric before a secret is
+released — "biometric if available, else passphrase":
+
+```cpp
+keyward::Vault vault{"myapp",
+    std::make_unique<keyward::FallbackAuthenticator>(
+        std::make_unique<keyward::BiometricAuthenticator>("Use passphrase"),
+        std::make_unique<keyward::PassphraseAuthenticator>(verifier, source))};
+```
+
+Where no OS keychain exists (Linux without libsecret, BSD, containers), the file
+fallback can encrypt at rest — pass a `KeyProvider`, or set `KEYWARD_PASSPHRASE`
+for a headless deployment:
+
+```cpp
+auto store = keyward::defaultSecretStore("myapp",
+    std::make_unique<keyward::PassphraseKeyProvider>(source));   // encrypted file fallback
 ```
 
 ## Build
