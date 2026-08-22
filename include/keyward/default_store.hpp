@@ -16,8 +16,14 @@ std::filesystem::path defaultStorePath(const std::string& app);
 // The best store for this platform, namespaced to `app`: the OS keychain in
 // front of the 0600 file fallback, so an existing file secret migrates to the
 // keychain on the next write. Falls back to the file alone where no keychain
-// backend exists (Linux without libsecret, BSD, ...). NOTE: that fallback file
-// is PLAINTEXT — see the overload below to encrypt it.
+// backend exists (Linux without libsecret, BSD, ...).
+//
+// The fallback file is PLAINTEXT unless a key source is given. As a headless
+// on-ramp, if the KEYWARD_PASSPHRASE environment variable is set this call uses
+// it to encrypt the file tier (no interactive prompt) — equivalent to passing a
+// passphrase-backed KeyProvider to the overload below. When the file store is
+// the SOLE tier and stays plaintext, a one-line warning is printed to stderr
+// (silence it with KEYWARD_SILENCE_PLAINTEXT_WARNING).
 std::unique_ptr<SecretStore> defaultSecretStore(const std::string& app);
 
 // As above, but the file tier — whether it's the fallback behind a keychain or

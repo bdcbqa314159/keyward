@@ -8,11 +8,29 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdlib>
 #include <memory>
 #include <optional>
 #include <string>
 
 #include "keyward/key_provider.hpp"
+
+namespace {
+void setEnv(const char* k, const char* v) {
+#if defined(_WIN32)
+  _putenv_s(k, v);
+#else
+  setenv(k, v, 1);
+#endif
+}
+void unsetEnv(const char* k) {
+#if defined(_WIN32)
+  _putenv_s(k, "");
+#else
+  unsetenv(k);
+#endif
+}
+}  // namespace
 
 TEST(DefaultStore, PathIsNamespacedToApp) {
   const auto p = keyward::defaultStorePath("kw-app-xyz");
@@ -37,4 +55,19 @@ TEST(DefaultStore, NullKeySourceEqualsPlaintextOverload) {
   ASSERT_NE(a, nullptr);
   ASSERT_NE(b, nullptr);
   EXPECT_EQ(a->location(), b->location());  // same store, same tier
+}
+
+// The KEYWARD_PASSPHRASE on-ramp path constructs cleanly (env -> provider ->
+// encrypted file tier). Construction is backend-free; this exercises the env
+// code path under the sanitizer/leak jobs. The encryption itself is proven in
+// file_store_encryption_tests. Silence the sole-tier plaintext warning so the
+// no-vault CI runners don't print during the test.
+TEST(DefaultStore, EnvPassphraseOnRampConstructs) {
+  setEnv("KEYWARD_SILENCE_PLAINTEXT_WARNING", "1");
+  setEnv("KEYWARD_PASSPHRASE", "deployment-secret");
+  auto store = keyward::defaultSecretStore("kw-app-env");
+  ASSERT_NE(store, nullptr);
+  EXPECT_FALSE(store->location().empty());
+  unsetEnv("KEYWARD_PASSPHRASE");
+  unsetEnv("KEYWARD_SILENCE_PLAINTEXT_WARNING");
 }
