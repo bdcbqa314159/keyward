@@ -394,6 +394,11 @@ if(KEYWARD_BUILD_TESTS)
   target_link_libraries(file_store_encryption_tests PRIVATE keyward GTest::gtest_main)
   gtest_discover_tests(file_store_encryption_tests)
 
+  # defaultSecretStore path + the encrypting overload wiring (backend-free smoke).
+  add_executable(default_store_tests tests/default_store_test.cpp)
+  target_link_libraries(default_store_tests PRIVATE keyward GTest::gtest_main)
+  gtest_discover_tests(default_store_tests)
+
   # FallbackAuthenticator policy (fakes) + a link/availability smoke of Biometric.
   add_executable(fallback_authenticator_tests tests/fallback_authenticator_test.cpp)
   target_link_libraries(fallback_authenticator_tests PRIVATE keyward GTest::gtest_main)
