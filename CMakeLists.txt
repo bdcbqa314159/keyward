@@ -88,6 +88,7 @@ add_library(keyward
   src/random.cpp
   src/secret_box.cpp
   src/record_codec.cpp
+  src/base64.cpp
   src/secure_memory.cpp
   src/passphrase_authenticator.cpp
   src/key_provider.cpp
@@ -391,6 +392,11 @@ if(KEYWARD_BUILD_TESTS)
   add_executable(encrypted_file_format_tests tests/encrypted_file_format_test.cpp)
   target_link_libraries(encrypted_file_format_tests PRIVATE keyward GTest::gtest_main)
   gtest_discover_tests(encrypted_file_format_tests)
+
+  # Shared base64 utility (round-trip + strict/fail-closed decode).
+  add_executable(base64_tests tests/base64_test.cpp)
+  target_link_libraries(base64_tests PRIVATE keyward GTest::gtest_main)
+  gtest_discover_tests(base64_tests)
 
   # FileSecretStore encryption mode (round-trip, keyless list/remove, migration,
   # fail-closed on wrong passphrase / tamper).

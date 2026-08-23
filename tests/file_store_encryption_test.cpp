@@ -11,6 +11,8 @@
 #include "keyward/encrypted_file_format.hpp"
 #include "keyward/file_secret_store.hpp"
 #include "keyward/key_provider.hpp"
+#include "keyward/schema.hpp"
+#include "keyward/vault.hpp"
 
 namespace fs = std::filesystem;
 using keyward::FileSecretStore;
@@ -208,4 +210,58 @@ TEST(FileEncryption, EmptyValueRoundTrips) {
   auto v = store.get("k");
   ASSERT_TRUE(v.has_value());
   EXPECT_EQ(*v, "");
+}
+
+// --- F2: the plaintext tier must be binary-safe (Vault stores binary blobs) ---
+
+TEST(FilePlaintext, RoundTripsBinaryValuesLosslessly) {
+  TempFile tmp("bin");
+  FileSecretStore s{tmp.path};  // plaintext mode (no provider)
+
+  const std::string with_newline = "a\nb";         // embedded 0x0a — old getline truncated this
+  const std::string with_trailing_ws = "secret ";  // old trimTrailing ate this
+  const std::string with_nul = std::string("x\0y", 3);
+  s.set("k1", with_newline);
+  s.set("k2", with_trailing_ws);
+  s.set("k3", with_nul);
+
+  EXPECT_EQ(s.get("k1"), with_newline);
+  EXPECT_EQ(s.get("k2"), with_trailing_ws);
+  EXPECT_EQ(s.get("k3"), with_nul);
+}
+
+namespace {
+struct BinCred {
+  std::string user;
+  std::string token;
+  bool operator==(const BinCred&) const = default;
+  static keyward::Schema<BinCred> schema() {
+    return {{"user", &BinCred::user}, {"token", &BinCred::token, keyward::Sensitive}};
+  }
+};
+}  // namespace
+
+// End-to-end: a Vault record whose serialized blob contains 0x0a must survive a
+// save/load through the plaintext file tier (the sole tier on no-vault hosts).
+TEST(FilePlaintext, VaultRecordSurvivesPlaintextTier) {
+  TempFile tmp("vaultbin");
+  keyward::Vault v{std::make_unique<FileSecretStore>(tmp.path)};
+  const BinCred in{"u", "tok\nen-value"};  // newline in a field value forces 0x0a in the blob
+  v.save("svc", in);
+  const auto out = v.load<BinCred>("svc");
+  ASSERT_TRUE(out.has_value());
+  EXPECT_EQ(*out, in);
+}
+
+// A legacy raw plaintext file (no magic) is still readable, then upgraded to v1
+// on the next write.
+TEST(FilePlaintext, ReadsLegacyRawThenUpgrades) {
+  TempFile tmp("legacyraw");
+  writeRaw(tmp.path, "simple=value\nother=thing\n");  // old raw format, no magic line
+  FileSecretStore s{tmp.path};
+  EXPECT_EQ(s.get("simple"), "value");
+  EXPECT_EQ(s.get("other"), "thing");
+  s.set("new", "x");                                              // rewrites in v1
+  EXPECT_EQ(readRaw(tmp.path).rfind("keyward-plain-v1", 0), 0u);  // now v1
+  EXPECT_EQ(s.get("simple"), "value");                            // still readable
 }
