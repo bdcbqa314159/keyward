@@ -132,7 +132,11 @@ if(APPLE)
 endif()
 
 if(WIN32)
-  target_link_libraries(keyward PUBLIC Advapi32)  # Credential Manager: CredWrite/Read/Delete
+  # Advapi32: Credential Manager (CredWrite/Read/Delete). RuntimeObject: the WinRT
+  # activation runtime (RoGetActivationFactory / RoOriginateLanguageException) that
+  # C++/WinRT calls for the Windows Hello backend in biometric_authenticator.cpp.
+  # PUBLIC because keyward is a static lib, so a consumer links these too.
+  target_link_libraries(keyward PUBLIC Advapi32 RuntimeObject)
 endif()
 
 # --- optional Linux Secret Service backend (libsecret) --------------------
@@ -477,6 +481,14 @@ if(KEYWARD_BUILD_TESTS)
   add_executable(polkit_authenticator_tests tests/polkit_authenticator_test.cpp)
   target_link_libraries(polkit_authenticator_tests PRIVATE keyward GTest::gtest_main)
   gtest_discover_tests(polkit_authenticator_tests)
+
+  # Windows Hello presence checks (UserConsentVerifier). Like polkit, the granted
+  # path needs a live user + hardware, so what runs headlessly is the
+  # never-throws / Unavailable-degrades-the-fallback contract. Off Windows it is a
+  # single GTEST_SKIP.
+  add_executable(biometric_authenticator_tests tests/biometric_authenticator_test.cpp)
+  target_link_libraries(biometric_authenticator_tests PRIVATE keyward GTest::gtest_main)
+  gtest_discover_tests(biometric_authenticator_tests)
 
   # Task 7 — Prompter protocol + Vault::ensure/revise (fake-prompter oracle).
   add_executable(prompter_tests tests/prompter_test.cpp)

@@ -5,8 +5,10 @@ back to the app, prove the user authorizes it. The OS keychain protects secrets
 *at rest*; the authenticator adds *"who is asking, right now, and do they mean
 it?"* on top.
 
-Status: **design only — not built.** This is the review-gated security layer;
-the agent (below) is the one genuinely new attack surface in keyward, so it lands
+Status: **the gate tiers are built** — `NoAuth`, `PassphraseAuth`, `BiometricAuth`
+(macOS Touch ID, Windows Hello) and Linux polkit presence all ship, composed via
+`FallbackAuthenticator`. What remains **design-only** is the TTL cache and the
+**agent** (below) — the one genuinely new attack surface in keyward, so it lands
 last and warrants a focused review.
 
 ## Why it exists
@@ -52,7 +54,7 @@ Implementations:
 |---|---|
 | `NoAuth` | always `Allowed` — dev/CI only, **explicit opt-in** |
 | `PassphraseAuth` | prompt via a `Prompter`, verify against a stored Argon2 verifier (constant-time) |
-| `BiometricAuth` | Touch ID (macOS `LAContext`), Windows Hello (`UserConsentVerifier`), Linux → polkit or passphrase fallback |
+| `BiometricAuth` | Touch ID (macOS `LAContext`) ✅, Windows Hello (`UserConsentVerifier`) ✅, Linux → polkit ✅ or passphrase fallback |
 | `AgentAuth` | delegate to the agent (which owns biometric + the cross-process TTL cache) |
 
 ## Where it plugs in
@@ -115,9 +117,11 @@ a silent `Allowed`. Distinguish `Cancelled` (user said no) from `Unavailable`
 
 ## Phasing
 
-1. `Authenticator` interface + `NoAuth` + `PassphraseAuth` (reuses the existing `Prompter`).
+1. `Authenticator` interface + `NoAuth` + `PassphraseAuth` (reuses the existing `Prompter`). ✅
 2. TTL-cache wrapper (`CachingAuthenticator`).
-3. `BiometricAuth` — macOS Touch ID first, then Windows Hello.
+3. `BiometricAuth` — macOS Touch ID ✅, Windows Hello ✅ (`UserConsentVerifier` via the
+   `IUserConsentVerifierInterop` HWND path, on a dedicated STA thread; fails closed to
+   `Unavailable` with no Hello / no window). Linux presence via polkit ✅.
 4. `AgentAuth` + the agent daemon — **review-gated, last.**
 
 ## Open decisions (need a call before building)
