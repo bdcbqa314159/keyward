@@ -144,8 +144,9 @@ weaker store.
 compare; native backends on **macOS Keychain, Windows Credential Manager, and
 Linux Secret Service**; the **encrypted-file fallback** (Argon2id +
 XChaCha20-Poly1305, opt-in via `KeyProvider` or `KEYWARD_PASSPHRASE`); CLI + TUI
-prompters; the authenticator layer (passphrase / biometric / fallback); threat
-model, fuzzing, ASan/UBSan/LSan CI, and install/`find_package`/pkg-config.
+prompters; the authenticator layer (passphrase / biometric / fallback) with a
+native presence check on each OS — **macOS Touch ID, Windows Hello, Linux polkit**;
+threat model, fuzzing, ASan/UBSan/LSan CI, and install/`find_package`/pkg-config.
 
 **Remaining:** the review-gated **agent daemon** (ssh-agent-style; see
 [AUTHENTICATOR.md](AUTHENTICATOR.md) and [AGENT_SCOPE.md](AGENT_SCOPE.md)); a 1.0

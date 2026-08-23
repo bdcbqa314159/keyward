@@ -71,7 +71,10 @@ auto jira = vault.ensure<JiraCredential>("jira", cli);   // prompt on first run,
 ```
 
 An optional access gate can require a passphrase or biometric before a secret is
-released — "biometric if available, else passphrase":
+released — "biometric if available, else passphrase". The biometric tier is Touch
+ID on macOS and Windows Hello on Windows (via `UserConsentVerifier`); on Linux the
+presence check goes through polkit. Each reports `Unavailable` where it can't ask,
+so the fallback runs:
 
 ```cpp
 keyward::Vault vault{"myapp",
