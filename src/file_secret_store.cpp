@@ -5,6 +5,7 @@
 #include <optional>
 #include <stdexcept>
 
+#include "keyward/base64.hpp"                 // base64_encode/decode (binary-safe plaintext values)
 #include "keyward/crypto_primitives.hpp"      // aead_seal/aead_open, kNonceSize, kSaltSize
 #include "keyward/encrypted_file_format.hpp"  // EncryptedFile, parse/format, is_encrypted_file
 #include "keyward/random.hpp"                 // random_bytes
@@ -75,6 +76,8 @@ void restrictToOwnerWin(const fs::path& p) {
 }
 #endif  // _WIN32
 
+constexpr std::string_view kPlainMagic = "keyward-plain-v1";
+
 std::string trimTrailing(std::string v) {
   while (!v.empty() &&
          (v.back() == '\r' || v.back() == '\n' || v.back() == ' ' || v.back() == '\t'))
@@ -82,28 +85,62 @@ std::string trimTrailing(std::string v) {
   return v;
 }
 
-// Read the file as ordered NAME=value pairs (order preserved on rewrite).
+// Read the plaintext file as ordered NAME=value pairs. The v1 format
+// base64-encodes each value so arbitrary bytes survive the line-based file — a
+// Vault blob is length-prefixed binary that routinely contains 0x0a (a newline)
+// or trailing whitespace, which the old raw `getline`/`trimTrailing` path
+// silently corrupted. A file without the magic line is a legacy raw file, read
+// best-effort (and rewritten to v1 on the next write).
 std::vector<std::pair<std::string, std::string>> readAll(const fs::path& p) {
+  std::ifstream in(p, std::ios::binary);
+  const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
   std::vector<std::pair<std::string, std::string>> out;
-  std::ifstream in(p);
-  std::string line;
-  while (std::getline(in, line)) {
-    const auto eq = line.find('=');
-    if (eq == std::string::npos) continue;
-    out.emplace_back(line.substr(0, eq), trimTrailing(line.substr(eq + 1)));
+  if (text.empty()) return out;
+
+  std::string_view rest = text;
+  auto nextLine = [&rest]() -> std::string_view {
+    const std::size_t nl = rest.find('\n');
+    std::string_view line = (nl == std::string_view::npos) ? rest : rest.substr(0, nl);
+    rest = (nl == std::string_view::npos) ? std::string_view{} : rest.substr(nl + 1);
+    if (!line.empty() && line.back() == '\r') line.remove_suffix(1);
+    return line;
+  };
+
+  const std::string_view whole = rest;
+  const bool v1 = (nextLine() == kPlainMagic);  // consumes the first line
+  if (!v1) rest = whole;                        // no magic: first line was legacy data, rewind
+
+  while (!rest.empty()) {
+    const std::string_view line = nextLine();
+    if (line.empty()) continue;
+    const std::size_t eq = line.find('=');
+    if (eq == std::string_view::npos) continue;  // skip malformed
+    const std::string_view name = line.substr(0, eq);
+    const std::string_view val = line.substr(eq + 1);
+    if (v1) {
+      std::optional<std::string> dec = base64_decode(val);
+      if (!dec) continue;  // skip a corrupt entry rather than return garbage
+      out.emplace_back(std::string(name), std::move(*dec));
+    } else {
+      out.emplace_back(std::string(name), trimTrailing(std::string(val)));  // legacy raw
+    }
   }
   return out;
 }
 
-// Serialize the pairs once, into storage that zeroes itself. The buffer holds
-// every secret in the store, so it must not be left in freed heap.
+// Serialize the pairs once, into storage that zeroes itself (holds every secret).
+// v1 format: magic line, then NAME=base64(value) so binary values round-trip.
 SecureString serialize(const std::vector<std::pair<std::string, std::string>>& kv) {
   SecureString out;
+  out.append(kPlainMagic.begin(), kPlainMagic.end());
+  out.push_back('\n');
   for (const auto& [k, v] : kv) {
     out.append(k.begin(), k.end());
     out.push_back('=');
-    out.append(v.begin(), v.end());
+    std::string enc = base64_encode(v);
+    out.append(enc.begin(), enc.end());
     out.push_back('\n');
+    secure_zero(enc.data(), enc.size());  // wipe the transient encoded value
   }
   return out;
 }
