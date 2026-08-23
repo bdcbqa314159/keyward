@@ -38,6 +38,11 @@ std::string readRaw(const fs::path& p) {
   return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
 }
 
+void writeRaw(const fs::path& p, const std::string& s) {
+  std::ofstream out(p, std::ios::binary | std::ios::trunc);
+  out.write(s.data(), static_cast<std::streamsize>(s.size()));
+}
+
 }  // namespace
 
 TEST(FileEncryption, RoundTripsAndFileIsEncrypted) {
@@ -111,7 +116,9 @@ TEST(FileEncryption, TamperedEntryThrows) {
   EXPECT_THROW(store.get("jira"), std::runtime_error);
 }
 
-TEST(FileEncryption, MigratesLegacyPlaintextOnSet) {
+// Migration is now OPT-IN (allow_plaintext_migration=true) — reading/migrating a
+// legacy plaintext file is only done when the caller explicitly trusts it.
+TEST(FileEncryption, MigratesLegacyPlaintextOnSetWhenOptedIn) {
   TempFile tmp("migrate");
   // Seed a legacy plaintext file with the plaintext-mode store.
   {
@@ -120,7 +127,7 @@ TEST(FileEncryption, MigratesLegacyPlaintextOnSet) {
   }
   EXPECT_FALSE(keyward::is_encrypted_file(readRaw(tmp.path)));
 
-  FileSecretStore store{tmp.path, provider("pw")};
+  FileSecretStore store{tmp.path, provider("pw"), /*allow_plaintext_migration=*/true};
   EXPECT_EQ(store.get("old"), "legacy-value");  // read legacy without migrating
   store.set("new", "fresh");                    // this triggers migration
   const std::string raw = readRaw(tmp.path);
@@ -128,6 +135,70 @@ TEST(FileEncryption, MigratesLegacyPlaintextOnSet) {
   EXPECT_EQ(raw.find("legacy-value"), std::string::npos);  // old value re-sealed
   EXPECT_EQ(store.get("old"), "legacy-value");
   EXPECT_EQ(store.get("new"), "fresh");
+}
+
+// --- F1: format-downgrade / plaintext-injection must fail closed by default ---
+
+// An encrypted store must NOT silently trust a plaintext-format file dropped in
+// by someone with file-write access (a sync folder, a restored backup).
+TEST(FileEncryption, RejectsPlaintextFormatWhenEncryptionConfigured) {
+  TempFile tmp("inject");
+  {
+    FileSecretStore s{tmp.path, provider("pw")};
+    s.set("token", "REAL");
+  }
+  ASSERT_TRUE(keyward::is_encrypted_file(readRaw(tmp.path)));
+
+  writeRaw(tmp.path, "token=EVIL-INJECTED\n");  // attacker's plaintext, no magic line
+
+  FileSecretStore reopened{tmp.path, provider("pw")};
+  EXPECT_THROW(reopened.get("token"), std::runtime_error);  // fail closed, never the injected bytes
+}
+
+// The injection must not survive being laundered into an authentic encrypted
+// entry by the next legitimate write.
+TEST(FileEncryption, DoesNotLaunderInjectedPlaintextOnNextSet) {
+  TempFile tmp("launder");
+  {
+    FileSecretStore s{tmp.path, provider("pw")};
+    s.set("token", "REAL");
+  }
+  writeRaw(tmp.path, "token=EVIL-INJECTED\napi_key=EVIL2\n");
+
+  FileSecretStore s{tmp.path, provider("pw")};
+  EXPECT_ANY_THROW(s.set("unrelated", "x"));  // must not re-seal attacker plaintext
+  FileSecretStore reopened{tmp.path, provider("pw")};
+  EXPECT_ANY_THROW((void)reopened.get("token"));
+}
+
+// A corrupted magic line (bit-flip, not a full replacement) must fail closed too,
+// not fall through and return the base64 ciphertext body as the value.
+TEST(FileEncryption, CorruptMagicLineFailsClosed) {
+  TempFile tmp("badmagic");
+  {
+    FileSecretStore s{tmp.path, provider("pw")};
+    s.set("token", "REAL");
+  }
+  std::string raw = readRaw(tmp.path);
+  raw[0] = 'X';  // "keyward-file-v1" -> "Xeyward-file-v1"
+  writeRaw(tmp.path, raw);
+
+  FileSecretStore s{tmp.path, provider("pw")};
+  EXPECT_THROW(s.get("token"), std::runtime_error);
+}
+
+// The downgrade must not poison the keyless operations either.
+TEST(FileEncryption, DowngradeDoesNotPoisonListOrRemove) {
+  TempFile tmp("breadth");
+  {
+    FileSecretStore s{tmp.path, provider("pw")};
+    s.set("real", "R");
+  }
+  writeRaw(tmp.path, "injected=ZZZ\n");
+
+  FileSecretStore s{tmp.path, provider("pw")};
+  EXPECT_THROW(s.list(), std::runtime_error);              // not a list of planted names
+  EXPECT_THROW(s.remove("whatever"), std::runtime_error);  // must not rewrite as plaintext
 }
 
 TEST(FileEncryption, EmptyValueRoundTrips) {
