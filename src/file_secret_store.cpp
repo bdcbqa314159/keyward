@@ -285,6 +285,11 @@ const Secret& FileSecretStore::ensureKey(std::string_view salt) {
   // the header, producing a file where some entries decrypt and the new one does
   // not. A wrong passphrase still fails closed later via AEAD.
   if (key_ && salt_ == salt) return *key_;
+  // The salt comes from the (unauthenticated) file header; reject a malformed
+  // length before feeding it to Argon2 — consistent with the fail-closed posture,
+  // and future-proof against a KDF that asserts on salt size.
+  if (salt.size() != kSaltSize)
+    throw std::runtime_error("keyward: malformed salt in " + path_.string());
   salt_ = std::string(salt);
   std::optional<Secret> k = key_provider_->unlock(salt_, "unlock " + path_.filename().string());
   if (!k) throw std::runtime_error("keyward: passphrase entry cancelled for " + path_.string());

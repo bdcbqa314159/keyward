@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <optional>
+#include <stdexcept>
 
 #include "keyward/record.hpp"
 
@@ -29,9 +30,14 @@ SecureString encode_fields(const Fields& fields) {
   SecureString out{};
   out.push_back(static_cast<char>(kFormatVersion));  // version byte first
   for (const Field& f : fields) {
-    put_u32(out, f.name.size());
+    // Length prefixes are 32-bit; refuse a field that would truncate rather than
+    // silently desync the decoder. (Not reachable with real credentials — OS
+    // backends cap blobs far below this — pure defense-in-depth.)
+    if (f.name.size() > UINT32_MAX || f.value.size() > UINT32_MAX)
+      throw std::length_error("keyward: record field too large to encode (>4 GiB)");
+    put_u32(out, static_cast<uint32_t>(f.name.size()));
     out += f.name;
-    put_u32(out, f.value.size());
+    put_u32(out, static_cast<uint32_t>(f.value.size()));
     out += f.value;
   }
   return out;
