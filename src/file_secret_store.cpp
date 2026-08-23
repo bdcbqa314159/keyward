@@ -279,12 +279,16 @@ void FileSecretStore::guardDowngrade() const {
 }
 
 const Secret& FileSecretStore::ensureKey(std::string_view salt) {
-  if (!key_) {
-    salt_ = std::string(salt);
-    std::optional<Secret> k = key_provider_->unlock(salt_, "unlock " + path_.filename().string());
-    if (!k) throw std::runtime_error("keyward: passphrase entry cancelled for " + path_.string());
-    key_ = std::move(*k);
-  }
+  // The cached key is bound to the salt it was derived from. If the file's salt
+  // differs (a rotated or swapped file), re-derive for THIS salt — otherwise set
+  // would seal a new entry under the stale key while writing the file's salt into
+  // the header, producing a file where some entries decrypt and the new one does
+  // not. A wrong passphrase still fails closed later via AEAD.
+  if (key_ && salt_ == salt) return *key_;
+  salt_ = std::string(salt);
+  std::optional<Secret> k = key_provider_->unlock(salt_, "unlock " + path_.filename().string());
+  if (!k) throw std::runtime_error("keyward: passphrase entry cancelled for " + path_.string());
+  key_ = std::move(*k);
   return *key_;
 }
 
