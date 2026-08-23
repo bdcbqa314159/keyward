@@ -223,8 +223,23 @@ void writeEncrypted(const fs::path& p, const EncryptedFile& ef) {
 
 FileSecretStore::FileSecretStore(fs::path path) : path_(std::move(path)) {}
 
-FileSecretStore::FileSecretStore(fs::path path, std::unique_ptr<KeyProvider> key_provider)
-    : path_(std::move(path)), key_provider_(std::move(key_provider)) {}
+FileSecretStore::FileSecretStore(fs::path path, std::unique_ptr<KeyProvider> key_provider,
+                                 bool allow_plaintext_migration)
+    : path_(std::move(path)),
+      key_provider_(std::move(key_provider)),
+      allow_plaintext_migration_(allow_plaintext_migration) {}
+
+// An encryption-mode store is looking at a present, non-empty file that is NOT
+// in the encrypted format. The format was decided from unauthenticated bytes, so
+// unless the caller explicitly opted into trusting a legacy plaintext file, this
+// is a tamper / format downgrade — refuse it.
+void FileSecretStore::guardDowngrade() const {
+  if (allow_plaintext_migration_) return;
+  throw std::runtime_error(
+      "keyward: refusing a non-encrypted file for the encrypted store " + path_.string() +
+      " (possible tampering / format downgrade). Only construct with "
+      "allow_plaintext_migration=true for a file you trust is a genuine legacy plaintext store.");
+}
 
 const Secret& FileSecretStore::ensureKey(std::string_view salt) {
   if (!key_) {
@@ -250,7 +265,10 @@ std::optional<std::string> FileSecretStore::get(const std::string& name) {
 
   const std::string text = readFileText(path_);
   if (text.empty()) return std::nullopt;
-  if (!is_encrypted_file(text)) return plaintextGet(path_, name);  // legacy, not yet migrated
+  if (!is_encrypted_file(text)) {
+    guardDowngrade();                  // throws unless legacy migration opted-in
+    return plaintextGet(path_, name);  // opted-in: read the legacy plaintext file
+  }
 
   std::optional<EncryptedFile> ef = parse_encrypted_file(text);
   if (!ef) throw std::runtime_error("keyward: corrupt encrypted store " + path_.string());
@@ -292,15 +310,17 @@ void FileSecretStore::set(const std::string& name, std::string_view value) {
     if (!parsed) throw std::runtime_error("keyward: corrupt encrypted store " + path_.string());
     ef = std::move(*parsed);
     ensureKey(ef.salt);  // keep the file's existing salt so cached key stays valid
-  } else {
-    ef.salt = random_bytes(kSaltSize);  // new file, or legacy plaintext -> migrate
+  } else if (text.empty()) {
+    ef.salt = random_bytes(kSaltSize);  // brand-new file
     ensureKey(ef.salt);
-    if (!text.empty()) {  // migrate: re-seal every legacy entry under the new key
-      for (auto& [k, v] : readAll(path_)) {
-        std::string nonce = random_bytes(kNonceSize);
-        ef.entries.emplace_back(k, nonce + aead_seal(*key_, nonce, v));
-        secure_zero(v.data(), v.size());  // wipe the legacy plaintext once re-sealed
-      }
+  } else {
+    guardDowngrade();  // non-empty, non-encrypted -> throws unless migration opted-in
+    ef.salt = random_bytes(kSaltSize);
+    ensureKey(ef.salt);
+    for (auto& [k, v] : readAll(path_)) {  // opted-in: re-seal every legacy entry under the new key
+      std::string nonce = random_bytes(kNonceSize);
+      ef.entries.emplace_back(k, nonce + aead_seal(*key_, nonce, v));
+      secure_zero(v.data(), v.size());  // wipe the legacy plaintext once re-sealed
     }
   }
 
@@ -330,7 +350,10 @@ void FileSecretStore::remove(const std::string& name) {
     writeEncrypted(path_, out);
     return;
   }
-  // Plaintext mode, or a not-yet-migrated legacy file: rewrite plaintext.
+  // Encryption mode looking at a present, non-encrypted file: refuse the
+  // downgrade (unless opted-in) rather than rewriting the store as plaintext.
+  if (encrypted() && !text.empty()) guardDowngrade();
+  // Plaintext mode, empty file, or an opted-in legacy file: rewrite plaintext.
   std::vector<std::pair<std::string, std::string>> out;
   for (auto& e : readAll(path_))
     if (e.first != name) out.push_back(std::move(e));
@@ -347,6 +370,9 @@ std::vector<std::string> FileSecretStore::list() {
       for (const auto& [k, blob] : ef->entries) names.push_back(k);  // no key needed
       return names;
     }
+    // Present, non-encrypted file under an encrypted store: refuse the downgrade
+    // (unless opted-in) rather than enumerating attacker-chosen names.
+    if (!text.empty()) guardDowngrade();
   }
   std::vector<std::string> names;
   for (const auto& [k, v] : readAll(path_))
