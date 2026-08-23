@@ -159,7 +159,8 @@ Authorization BiometricAuthenticator::authorize(std::string_view service, std::s
     winrt::Windows::Foundation::IAsyncOperation<UserConsentVerificationResult> op{nullptr};
     const HRESULT hr = interop->RequestVerificationForWindowAsync(
         hwnd, reinterpret_cast<HSTRING>(winrt::get_abi(message)),
-        winrt::guid_of<winrt::Windows::Foundation::IAsyncOperation<UserConsentVerificationResult>>(),
+        winrt::guid_of<
+            winrt::Windows::Foundation::IAsyncOperation<UserConsentVerificationResult> >(),
         winrt::put_abi(op));
     if (FAILED(hr) || op == nullptr) return;  // could not start the prompt -> Unavailable
 
