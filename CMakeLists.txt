@@ -426,7 +426,8 @@ if(KEYWARD_BUILD_TESTS)
   # requirements-dev.txt in the local .venv (or one on PATH); without it the
   # test compiles to a skip that says how to get it.
   find_program(KEYWARD_KEYRING_CLI keyring
-    HINTS ${CMAKE_CURRENT_SOURCE_DIR}/.venv/bin
+    HINTS ${CMAKE_CURRENT_SOURCE_DIR}/.venv/bin      # POSIX venv layout
+          ${CMAKE_CURRENT_SOURCE_DIR}/.venv/Scripts  # Windows venv layout
     NO_CMAKE_SYSTEM_PATH)
   add_executable(secret_service_interop_tests tests/secret_service_interop_test.cpp)
   target_link_libraries(secret_service_interop_tests PRIVATE keyward GTest::gtest_main)
@@ -439,6 +440,18 @@ if(KEYWARD_BUILD_TESTS)
                    "(.venv/bin/pip install -r requirements-dev.txt)")
   endif()
   gtest_discover_tests(secret_service_interop_tests)
+
+  # Windows interop — keyward <-> Python `keyring` over Credential Manager. Unlike
+  # the Secret Service side this is a NAMESPACE + UTF-16-LE-string contract, not
+  # byte-compatibility (keyring stores UTF-16-LE, keyward raw). Same pinned keyring
+  # CLI; skips without it or off Windows.
+  add_executable(windows_keyring_interop_tests tests/windows_keyring_interop_test.cpp)
+  target_link_libraries(windows_keyring_interop_tests PRIVATE keyward GTest::gtest_main)
+  if(KEYWARD_KEYRING_CLI)
+    target_compile_definitions(windows_keyring_interop_tests
+      PRIVATE KEYWARD_KEYRING_CLI="${KEYWARD_KEYRING_CLI}")
+  endif()
+  gtest_discover_tests(windows_keyring_interop_tests)
 
   # Gap 3 hardening — locked-keyring behaviour. Registered by hand rather than
   # via gtest_discover_tests because it MUST go through the isolation wrapper:

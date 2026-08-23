@@ -5,6 +5,11 @@
 
 #if defined(_WIN32)
 
+// clang-format off
+#include <windows.h>
+#include <wincred.h>
+// clang-format on
+
 #include <algorithm>
 #include <string>
 #include <vector>
@@ -100,14 +105,36 @@ TEST(WindowsCredentialStore, ListReturnsStoredNamesWithinNamespace) {
   s.set("list-a", "1");
   s.set("list-b", "2");
 
-  const std::vector<std::string> names = s.list();  // strips the "keyward:<app>:" prefix
+  const std::vector<std::string> names = s.list();  // strips the "@<app>" suffix
   const auto has = [&](const std::string& n) {
     return std::find(names.begin(), names.end(), n) != names.end();
   };
   EXPECT_TRUE(has("list-a"));
   EXPECT_TRUE(has("list-b"));
-  // Names come back unqualified (no namespace prefix leaking through).
-  for (const auto& n : names) EXPECT_EQ(n.find("keyward:"), std::string::npos);
+  // Names come back unqualified — the "@<app>" target suffix does not leak through.
+  for (const auto& n : names) EXPECT_EQ(n.find("@keyward-test-cred"), std::string::npos);
+}
+
+// The interop contract at the storage layer: keyward must write where Python
+// `keyring` looks — target "<name>@<app>", UserName "<name>" — so a keyring
+// get_password(app, name) resolves it via its compound fallback. Verified by
+// reading the raw credential back through the Win32 API directly (no keyring
+// needed here; the live cross-tool round trip is windows_keyring_interop_test).
+TEST(WindowsCredentialStore, WritesKeyringCompatibleTargetAndUserName) {
+  auto s = freshStore();
+  RemoveOnExit cleanup{&s, "kr-token"};
+  s.set("kr-token", "val");
+
+  const std::wstring target = L"kr-token@keyward-test-cred";  // "<name>@<app>"
+  PCREDENTIALW pcred = nullptr;
+  ASSERT_TRUE(CredReadW(target.c_str(), CRED_TYPE_GENERIC, 0, &pcred))
+      << "keyward did not write to keyring's compound target; GetLastError=" << GetLastError();
+  ASSERT_NE(pcred->UserName, nullptr);
+  EXPECT_STREQ(pcred->UserName, L"kr-token") << "UserName must be the name for keyring's match";
+  const std::string blob(reinterpret_cast<const char*>(pcred->CredentialBlob),
+                         pcred->CredentialBlobSize);
+  EXPECT_EQ(blob, "val") << "blob is raw bytes (no re-encoding)";
+  CredFree(pcred);
 }
 
 #else  // not Windows
