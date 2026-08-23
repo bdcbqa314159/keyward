@@ -212,6 +212,31 @@ TEST(FileEncryption, EmptyValueRoundTrips) {
   EXPECT_EQ(*v, "");
 }
 
+// --- F6: cached key must not be reused for a mismatched salt ---
+
+// After the on-disk salt changes underneath a live store, a set() must re-derive
+// for the file's current salt rather than seal the new entry under the stale
+// cached key (which would write a file where the new entry can't decrypt). Same
+// passphrase throughout; only the salt (and thus the correct key) differs.
+TEST(FileEncryption, DoesNotSealUnderStaleKeyAfterSaltChange) {
+  TempFile a("f6a"), b("f6b");
+  // Two encrypted files, SAME passphrase, DIFFERENT (random) salts.
+  {
+    FileSecretStore s{b.path, provider("pw")};
+    s.set("z", "from-b");
+  }
+  const std::string bFile = readRaw(b.path);
+
+  FileSecretStore s{a.path, provider("pw")};
+  s.set("x", "from-a");     // caches the key for a's salt
+  writeRaw(a.path, bFile);  // swap in b's file: same pw, different salt
+  s.set("y", "2");          // must re-derive for b's salt, not seal under a's stale key
+
+  FileSecretStore reopened{a.path, provider("pw")};
+  EXPECT_EQ(reopened.get("y"), "2");       // new entry decrypts (RED before the fix)
+  EXPECT_EQ(reopened.get("z"), "from-b");  // b's original entry still decrypts
+}
+
 // --- F2: the plaintext tier must be binary-safe (Vault stores binary blobs) ---
 
 TEST(FilePlaintext, RoundTripsBinaryValuesLosslessly) {
