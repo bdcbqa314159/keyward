@@ -155,7 +155,9 @@ the gate for entrusting others' high-value secrets. keyward is personal-grade
 until then.
 
 **Compatibility north star:** a secret written by Python `keyring` is readable
-by keyward and vice versa, green on all three OSes.
+by keyward and vice versa. Fully met on Linux (byte-for-byte); on Windows it holds
+only for UTF-16-LE string values, because `keyring`'s Windows blob is UTF-16-LE
+text while keyward stores raw bytes (see the Windows note below); macOS pending.
 
 Status: **Linux done** (`tests/secret_service_interop_test.cpp`, gated on the
 pinned `keyring` in `.venv`). The Secret Service backend stores exactly the two
@@ -183,9 +185,27 @@ all covered by the interop test:
   fail-closed, as the invariant requires.
 - `set` clears before storing, so any keyward write collapses the duplicates.
 
-macOS and Windows interop are unverified; `keyring` uses `SecItem` with
-(service, account) there and a `service@username` target name on Windows, so
-the mapping needs checking before either can be claimed.
+**Windows: verified, with a value-encoding limit** (`tests/windows_keyring_interop_test.cpp`,
+same pinned `keyring`). Unlike Secret Service, the two backends are *not*
+byte-compatible, and the reason is empirical: `keyring`'s `WinVaultKeyring` stores
+the blob as **UTF-16-LE text**, while keyward stores **raw bytes** (its `Vault`
+records are binary) and does not re-encode. So the interop is a **namespace
+alignment plus a string contract**, not byte-for-byte:
+
+- keyward writes where `keyring` looks — target `"<name>@<app>"`, `UserName`
+  `"<name>"` (`keyring`'s `"<username>@<service>"`; `service`=app, `username`=name),
+  so the items are **mutually discoverable**;
+- a value survives the crossing **iff it is UTF-16-LE**: a `keyring` password is
+  readable by keyward as its UTF-16-LE *bytes*, and a keyward value written as
+  UTF-16-LE is readable by `keyring` as the string. A raw keyward record is **not**
+  a `keyring`-readable string, and vice versa — the test pins all three directions.
+- keyward reads both the compound `"<name>@<app>"` (its own) and the bare
+  `"<app>"` target (where `keyring` parks the newest-for-service secret), matching
+  on `UserName`. `Persist` stays `LOCAL_MACHINE` (off roaming); it is not part of
+  the `(target, username)` key, so it does not affect interop.
+
+**macOS interop is unverified;** `keyring` uses `SecItem` with (service, account)
+there, so that mapping still needs checking before it can be claimed.
 
 **Which Secret Service providers are covered.** Only **gnome-keyring** is tested
 — it is what CI runs and what the contract, interop and locked-keyring tests

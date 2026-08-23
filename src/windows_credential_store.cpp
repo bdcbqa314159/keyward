@@ -7,7 +7,9 @@
 #include <wincred.h>
 // clang-format on
 
+#include <algorithm>
 #include <cwchar>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -16,15 +18,29 @@
 namespace keyward {
 namespace {
 
-// Namespaced target name (still UTF-8 here; convert to UTF-16 at the API edge).
-std::string targetName(const std::string& app, const std::string& name) {
-  return "keyward:" + app + ":" + name;
+// Target-name scheme, chosen to interoperate with Python `keyring`'s Windows
+// backend (WinVaultKeyring) so the two tools' items live in the same namespace.
+// keyring maps (service, username) -> keyward's (app, name), and stores each
+// secret under the COMPOUND target "<username>@<service>" once more than one
+// username exists for a service (the newest sits at the bare "<service>", older
+// ones are displaced to the compound form). keyward holds many names per app, so
+// it always writes the compound form "<name>@<app>" — which keyring resolves via
+// its own compound fallback — and reads the bare "<app>" too so it can see a
+// secret keyring wrote as the newest-for-service.
+//
+// NOTE: this is a NAMESPACE alignment, not a value-format one. keyring encodes
+// the blob as UTF-16-LE text; keyward stores raw bytes (its Vault records are
+// binary). So the items are mutually discoverable, but a value only survives the
+// crossing intact when it is UTF-16-LE — a plain keyward record is not readable
+// as a keyring string, and vice versa. See docs/DESIGN.md.
+std::string compoundTarget(const std::string& app, const std::string& name) {
+  return name + "@" + app;  // keyring's "<username>@<service>"
 }
 
-// UTF-8 std::string -> UTF-16 std::wstring. Used only for the *target name* (a
-// string); the credential blob stays raw bytes and is never converted.
-// Two-call idiom: size first (cchWideChar == 0), then fill. We pass the exact
-// byte count (not -1) so no terminating NUL is counted into the length; the
+// UTF-8 std::string -> UTF-16 std::wstring. Used only for the *target name* and
+// the *username* (both strings); the credential blob stays raw bytes and is never
+// converted. Two-call idiom: size first (cchWideChar == 0), then fill. We pass the
+// exact byte count (not -1) so no terminating NUL is counted into the length; the
 // std::wstring is NUL-terminated by c_str() at the call site.
 std::wstring toWide(const std::string& s) {
   if (s.empty()) return std::wstring();
@@ -38,7 +54,8 @@ std::wstring toWide(const std::string& s) {
 }
 
 // UTF-16 -> UTF-8, for a NUL-terminated wide string (e.g. an enumerated target
-// name). Returns empty on a null/empty input or a conversion failure.
+// name or a credential's UserName). Returns empty on a null/empty input or a
+// conversion failure.
 std::string fromWide(const wchar_t* w) {
   if (w == nullptr) return {};
   const int len = static_cast<int>(std::wcslen(w));
@@ -78,30 +95,52 @@ std::string errorText(DWORD err) {
   return out;
 }
 
+// What a single credential holds that keyward cares about: the UserName (keyward's
+// `name`) and the raw blob. keyring stores the name in UserName, and so do we, so
+// reads can tell a bare "<app>" item's owner apart.
+struct CredData {
+  std::string username;
+  std::string blob;
+};
+
+// Read the credential at `target`. nullopt on a genuine miss (ERROR_NOT_FOUND);
+// throws (fail closed) on any other error rather than masking it. `context` names
+// the caller's item for the error message — never a secret.
+std::optional<CredData> readCredential(const std::wstring& target, const std::string& context) {
+  PCREDENTIALW pcred = nullptr;
+  if (!CredReadW(target.c_str(), CRED_TYPE_GENERIC, 0, &pcred)) {
+    const DWORD err = GetLastError();
+    if (err == ERROR_NOT_FOUND) return std::nullopt;
+    throw std::runtime_error("keyward: CredReadW failed for '" + context + "' (" + errorText(err) +
+                             ")");
+  }
+  CredData out;
+  out.username = fromWide(pcred->UserName);
+  out.blob.assign(reinterpret_cast<const char*>(pcred->CredentialBlob),
+                  static_cast<size_t>(pcred->CredentialBlobSize));
+  // Scrub the plaintext from the OS-allocated buffer before freeing: CredFree only
+  // releases the memory, it does not zero it, so the secret would otherwise linger
+  // in freed heap. SecureZeroMemory is not optimized away.
+  if (pcred->CredentialBlob != nullptr && pcred->CredentialBlobSize != 0)
+    SecureZeroMemory(pcred->CredentialBlob, pcred->CredentialBlobSize);
+  CredFree(pcred);
+  return out;
+}
+
 }  // namespace
 
 WindowsCredentialStore::WindowsCredentialStore(std::string app) : app_(std::move(app)) {}
 
 std::optional<std::string> WindowsCredentialStore::get(const std::string& name) {
-  const std::wstring target = toWide(targetName(app_, name));
-  PCREDENTIALW pcred = nullptr;
-  if (!CredReadW(target.c_str(), CRED_TYPE_GENERIC, 0, &pcred)) {
-    const DWORD err = GetLastError();
-    if (err == ERROR_NOT_FOUND) return std::nullopt;  // a genuine miss
-    // Fail closed on any other error rather than masking it as "not found".
-    throw std::runtime_error("keyward: CredReadW failed for '" + name + "' (" + errorText(err) +
-                             ")");
-  }
-  // We own pcred now — copy the counted blob out (embedded NULs and all).
-  std::string out(reinterpret_cast<const char*>(pcred->CredentialBlob),
-                  static_cast<size_t>(pcred->CredentialBlobSize));
-  // Scrub the plaintext from the OS-allocated buffer before freeing: CredFree
-  // only releases the memory, it does not zero it, so the secret would otherwise
-  // linger in freed heap. SecureZeroMemory is not optimized away.
-  if (pcred->CredentialBlob != nullptr && pcred->CredentialBlobSize != 0)
-    SecureZeroMemory(pcred->CredentialBlob, pcred->CredentialBlobSize);
-  CredFree(pcred);
-  return out;
+  // keyward's own items live at the compound target; try that first so a keyward
+  // write is authoritative for a keyward read.
+  if (auto c = readCredential(toWide(compoundTarget(app_, name)), name)) return c->blob;
+  // Fall back to the bare "<app>" target, which is where keyring parks the
+  // newest-for-service secret — but only if its UserName is this name, mirroring
+  // keyring's own (service, username) match. This is how keyward SEES a
+  // keyring-written secret (its bytes are UTF-16-LE; see the scheme note above).
+  if (auto c = readCredential(toWide(app_), name); c && c->username == name) return c->blob;
+  return std::nullopt;
 }
 
 void WindowsCredentialStore::set(const std::string& name, std::string_view value) {
@@ -114,51 +153,85 @@ void WindowsCredentialStore::set(const std::string& name, std::string_view value
                             " bytes, over the Windows Credential Manager blob limit of " +
                             std::to_string(CRED_MAX_CREDENTIAL_BLOB_SIZE) + " bytes");
   }
-  const std::wstring target = toWide(targetName(app_, name));
+  const std::wstring target = toWide(compoundTarget(app_, name));
+  const std::wstring user = toWide(name);  // keyring's `username`; lets reads disambiguate
   CREDENTIALW cred = {};
   cred.Type = CRED_TYPE_GENERIC;
   cred.TargetName = const_cast<LPWSTR>(target.c_str());
+  cred.UserName = user.empty() ? nullptr : const_cast<LPWSTR>(user.c_str());
   cred.CredentialBlobSize = static_cast<DWORD>(value.size());
-  // Win32 takes a non-const LPBYTE but only reads it during the call.
+  // Win32 takes a non-const LPBYTE but only reads it during the call. Blob stays
+  // RAW BYTES (embedded NULs preserved) — keyward does not encode UTF-16-LE, so a
+  // keyward record is not a keyring-readable string. See the scheme note above.
   cred.CredentialBlob = reinterpret_cast<LPBYTE>(const_cast<char*>(value.data()));
   // Shown when a user browses "Windows Credentials" in Control Panel — never a secret.
   cred.Comment = const_cast<LPWSTR>(L"managed by keyward");
-  cred.Persist = CRED_PERSIST_LOCAL_MACHINE;
-  if (!CredWriteW(&cred, 0)) {  // upsert: replaces any existing item with this target
+  cred.Persist =
+      CRED_PERSIST_LOCAL_MACHINE;  // keyring uses ENTERPRISE; Persist is not part of
+                                   // the (target, username) key, so it does not affect
+                                   // interop, and LOCAL_MACHINE keeps secrets off roaming.
+  if (!CredWriteW(&cred, 0)) {     // upsert: replaces any existing item with this target
     throw std::runtime_error("keyward: CredWriteW failed for '" + name + "' (" +
                              errorText(GetLastError()) + ")");
   }
 }
 
 void WindowsCredentialStore::remove(const std::string& name) {
-  const std::wstring target = toWide(targetName(app_, name));
-  if (!CredDeleteW(target.c_str(), CRED_TYPE_GENERIC, 0)) {
+  bool removedAny = false;
+  // The compound target is keyward's own; delete it if present.
+  if (!CredDeleteW(toWide(compoundTarget(app_, name)).c_str(), CRED_TYPE_GENERIC, 0)) {
     const DWORD err = GetLastError();
-    if (err == ERROR_NOT_FOUND) return;  // surgical & idempotent: missing name is a no-op
-    throw std::runtime_error("keyward: CredDeleteW failed for '" + name + "' (" + errorText(err) +
-                             ")");
+    if (err != ERROR_NOT_FOUND)
+      throw std::runtime_error("keyward: CredDeleteW failed for '" + name + "' (" + errorText(err) +
+                               ")");
+  } else {
+    removedAny = true;
   }
+  // Also drop a keyring-written bare "<app>" item that belongs to this name, so a
+  // keyward remove of a visible secret actually removes it.
+  if (auto c = readCredential(toWide(app_), name); c && c->username == name) {
+    if (!CredDeleteW(toWide(app_).c_str(), CRED_TYPE_GENERIC, 0)) {
+      const DWORD err = GetLastError();
+      if (err != ERROR_NOT_FOUND)
+        throw std::runtime_error("keyward: CredDeleteW failed for '" + name + "' (" +
+                                 errorText(err) + ")");
+    } else {
+      removedAny = true;
+    }
+  }
+  (void)removedAny;  // surgical & idempotent: a missing name is simply a no-op
 }
 
 std::vector<std::string> WindowsCredentialStore::list() {
-  // Enumerate only our own items via the wildcard filter "keyward:<app>:*",
-  // then strip the namespace prefix to recover the caller's names.
-  const std::string prefix = targetName(app_, "");  // "keyward:<app>:"
-  const std::wstring filter = toWide(prefix + "*");
+  const std::string suffix = "@" + app_;
+  const std::wstring filter = toWide("*" + suffix);  // "*@<app>"
+  std::vector<std::string> names;
+
   DWORD count = 0;
   PCREDENTIALW* creds = nullptr;
   if (!CredEnumerateW(filter.c_str(), 0, &count, &creds)) {
     const DWORD err = GetLastError();
-    if (err == ERROR_NOT_FOUND) return {};  // no matching credentials — an empty store
-    throw std::runtime_error("keyward: CredEnumerateW failed (" + errorText(err) + ")");
+    if (err != ERROR_NOT_FOUND)  // no matching credentials is an empty store, not an error
+      throw std::runtime_error("keyward: CredEnumerateW failed (" + errorText(err) + ")");
+  } else {
+    names.reserve(count);
+    for (DWORD i = 0; i < count; ++i) {
+      const std::string target = fromWide(creds[i]->TargetName);
+      // Strip the trailing "@<app>" to recover the caller's name. ends_with guards
+      // against a target that merely contains "@<app>" mid-string.
+      if (target.size() > suffix.size() &&
+          target.compare(target.size() - suffix.size(), suffix.size(), suffix) == 0)
+        names.push_back(target.substr(0, target.size() - suffix.size()));
+    }
+    CredFree(creds);
   }
-  std::vector<std::string> names;
-  names.reserve(count);
-  for (DWORD i = 0; i < count; ++i) {
-    const std::string target = fromWide(creds[i]->TargetName);
-    if (target.starts_with(prefix)) names.push_back(target.substr(prefix.size()));
+
+  // A keyring-written newest-for-service secret sits at the bare "<app>" target;
+  // its name is the UserName. Include it (deduped) so keyward enumerates it too.
+  if (auto c = readCredential(toWide(app_), "list")) {
+    if (!c->username.empty() && std::find(names.begin(), names.end(), c->username) == names.end())
+      names.push_back(c->username);
   }
-  CredFree(creds);
   return names;
 }
 

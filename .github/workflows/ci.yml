@@ -355,6 +355,18 @@ jobs:
         if: runner.os == 'Linux' && steps.detect.outputs.cmake == 'true'
         run: python3 -m venv .venv && .venv/bin/pip install -q -r requirements-dev.txt
 
+      # Windows counterpart: the other side of the Credential Manager interop test.
+      # Same rule — the venv must exist BEFORE configure so find_program bakes in
+      # the .venv/Scripts/keyring.exe path; a later venv would leave the test
+      # skipping. WinVaultKeyring needs no extra service (Credential Manager is
+      # always present), unlike the Linux Secret Service.
+      - name: Install interop reference (Python keyring, Windows)
+        if: runner.os == 'Windows' && steps.detect.outputs.cmake == 'true'
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .venv\Scripts\pip install -q -r requirements-dev.txt
+
       - name: Configure
         if: steps.detect.outputs.cmake == 'true'
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release

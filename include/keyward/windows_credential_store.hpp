@@ -9,9 +9,14 @@ namespace keyward {
 
 #if defined(_WIN32)
 // Windows Credential Manager backend (Win32 Credential Management API): one
-// CRED_TYPE_GENERIC item per secret, target name namespaced "keyward:<app>:<name>".
-// DPAPI-backed — the OS encrypts at rest with a key bound to the user's logon.
-// Only declared on Windows; the body compiles empty elsewhere.
+// CRED_TYPE_GENERIC item per secret. Target/username naming follows Python
+// `keyring`'s WinVaultKeyring so the two tools share a namespace: target
+// "<name>@<app>", UserName "<name>" (keyring's "<username>@<service>"). DPAPI-
+// backed — the OS encrypts at rest with a key bound to the user's logon. The blob
+// is stored as RAW BYTES (binary-safe for Vault records); keyring stores UTF-16-LE
+// text, so items are mutually discoverable but a value only crosses intact when it
+// is UTF-16-LE (see the src note and docs/DESIGN.md). Only declared on Windows;
+// the body compiles empty elsewhere.
 class WindowsCredentialStore : public SecretStore {
  public:
   explicit WindowsCredentialStore(std::string app = "keyward");
