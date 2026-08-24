@@ -54,6 +54,14 @@ integration, the schema, in-process handling, and the encrypted-file crypto.
   (arch/debian/fedora) + install-&-consume (`find_package`/pkg-config). ~126 tests.
 - **Memory-protection verification**: tests assert guard pages / no-swap / no-core-dump
   are actually active (libsodium features force-enabled — see CMake).
+- **One internal adversarial review already run** (independent third-party agent,
+  read-only, per [ADVERSARIAL_REVIEW.md](ADVERSARIAL_REVIEW.md); report at
+  [ADVERSARIAL_REVIEW_FINDINGS.md](ADVERSARIAL_REVIEW_FINDINGS.md)). It confirmed
+  the crypto composition sound (nonce uniqueness, parser memory-safety,
+  constant-time compare, backend error-laundering, atomic writes + permissions).
+  All seven findings — F1 (High, format-downgrade) through F7 — are **fixed**,
+  each confirmed one with a regression test. A **second, fresh** independent
+  review of the fixed tree is the recommended next pre-audit step.
 
 ## 5. Known limitations / accepted residuals
 

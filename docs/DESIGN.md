@@ -19,13 +19,14 @@ owns:
 The practical consequence: the OS-backed path needs **no full cryptographic
 audit** — the trust anchor is the OS store.
 
-The portable file backend (for headless/CI where no OS store exists) was intended
-to encrypt at rest with audited primitives, and `seal`/`unseal` (Argon2id +
-XChaCha20-Poly1305, Monocypher) were built for it — but they were **never wired
-in**, and the file store writes **plaintext** today. `FileSecretStore`'s own
-header says so; this document previously did not. See
-[FILE_ENCRYPTION.md](FILE_ENCRYPTION.md) for what closing that gap involves and
-the decisions it is blocked on.
+The portable file backend (for headless/CI where no OS store exists) **encrypts
+at rest** with audited primitives (Argon2id + XChaCha20-Poly1305, Monocypher)
+when given a key source — a `KeyProvider`, or the `KEYWARD_PASSPHRASE` env
+on-ramp. Without one it stays plaintext (`0600` is access control, not
+encryption) and warns where it is the sole tier. An encrypted store **fails
+closed** on a non-encrypted file (no silent format downgrade), and the plaintext
+tier is binary-safe. See [FILE_ENCRYPTION.md](FILE_ENCRYPTION.md) for the design;
+the file tier is transitional (slated for removal once audit-stable).
 
 ## Developer experience
 
@@ -93,7 +94,7 @@ that, functions read the typed fields directly for their auth calls.
 Vault<T>       typed record <-> Fields, via the schema (member pointers)
    |           encode/decode a record  <-- the record codec
    v
-SecretStore    dumb key -> bytes:  env var -> OS keychain -> 0600 file (PLAINTEXT)
+SecretStore    dumb key -> bytes:  env var -> OS keychain -> 0600 file (encrypted if keyed)
    v
 Keychain / libsecret / Credential Manager / seal-unseal
 ```
