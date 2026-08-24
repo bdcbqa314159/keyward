@@ -237,6 +237,17 @@ TEST(FileEncryption, DoesNotSealUnderStaleKeyAfterSaltChange) {
   EXPECT_EQ(reopened.get("z"), "from-b");  // b's original entry still decrypts
 }
 
+// --- F5: reject a malformed salt length before deriving ---
+
+// A crafted file with a wrong-length (here empty) salt must be rejected up front,
+// not fed into derive_key — fail closed, and never crash/abort.
+TEST(FileEncryption, RejectsMalformedSaltLength) {
+  TempFile tmp("badsalt");
+  writeRaw(tmp.path, "keyward-file-v1\nsalt=\ntoken=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==\n");
+  FileSecretStore s{tmp.path, provider("pw")};
+  EXPECT_THROW(s.get("token"), std::runtime_error);
+}
+
 // --- F2: the plaintext tier must be binary-safe (Vault stores binary blobs) ---
 
 TEST(FilePlaintext, RoundTripsBinaryValuesLosslessly) {

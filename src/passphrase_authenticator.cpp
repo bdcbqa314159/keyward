@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "keyward/random.hpp"
+#include "keyward/secret.hpp"
 #include "keyward/secure_memory.hpp"
 #include "monocypher.h"
 
@@ -59,8 +60,10 @@ Authorization PassphraseAuthenticator::authorize(std::string_view service,
     std::string prompt = "Passphrase to " + std::string(reason) + " " + std::string(service) + ":";
     std::optional<std::string> entered = source_(prompt);
     if (!entered) return Authorization::Cancelled;
-    bool ok = verify_passphrase(*entered, verifier_);
-    secure_zero(entered->data(), entered->size());  // wipe the transient copy
+    // Hold the entered passphrase in secure memory; wipe the plain source copy.
+    Secret secure_entered(*entered);
+    secure_zero(entered->data(), entered->size());
+    bool ok = verify_passphrase(secure_entered.view(), verifier_);
     if (ok) return Authorization::Allowed;
   }
   return Authorization::Denied;
