@@ -72,7 +72,13 @@ keyward to store and retrieve.
   before release, so the residue is bounded — unlike the growth case above — but
   the wire-through is not finished. Note also that `from_fields` writes into the
   caller's own struct members, which keyward cannot control; the `Sensitive` flag
-  in a schema marks which of those matter.
+  in a schema marks which of those matter. The **transient passphrase** on the
+  derive/verify path is now moved into a `Secret` (secure memory) and the plain
+  source copy wiped immediately, so it is not a swappable `std::string` during the
+  ~2.2 s Argon2 derivation. The Argon2 **work buffer** (~100 MB of password-derived
+  state) is a plain heap allocation and remains a residual — secure-allocating that
+  size is impractical — so the "never swapped" guarantee is scoped to the *key*,
+  not to the derivation scratch.
 - Backends: macOS Keychain ✅, Windows Credential Manager ✅, Linux Secret
   Service via libsecret ✅ (`0600` file remains the fallback everywhere).
 - ✅ `decode_fields` is fuzzed in CI on every PR (libFuzzer + ASan, seeded corpus
@@ -112,12 +118,22 @@ keyward to store and retrieve.
   Still outstanding: concurrent writers can *lose an update* (each does
   read-modify-write), which atomicity does not address — that needs advisory
   locking.
-- ⚠️ **The file store writes plaintext.** `0600` is access control, not
-  encryption — anyone who gets the file (backup, sync folder, disk image, support
-  bundle) gets the secrets. `seal`/`unseal` exist and are fuzzed but have no
-  callers. It is the **sole** tier on Linux without libsecret and on BSD; a
-  drain-only legacy tier behind the keyring elsewhere; unused on Windows. Scoped
-  in [FILE_ENCRYPTION.md](FILE_ENCRYPTION.md), blocked on where the key comes from.
+- ✅ **The file store can encrypt at rest, and fails closed on the format.** The
+  file tier now encrypts each value (Argon2id + XChaCha20-Poly1305) when given a
+  key source — a `KeyProvider`, or the `KEYWARD_PASSPHRASE` env on-ramp for
+  headless deployments (`defaultSecretStore`). Without one it stays plaintext
+  (`0600` is access control, not encryption) and, where it is the **sole** tier,
+  emits a one-line stderr warning pointing at the fix. Two adversarial-review
+  findings are fixed here: an encrypted store now **refuses any non-encrypted file
+  by default** (F1 — the format was decided from unauthenticated bytes, so a
+  file-write attacker via a sync folder or backup could inject/substitute
+  credentials, bypassing the AEAD; migration of a genuine legacy plaintext file is
+  now an explicit opt-in), and the plaintext tier is **binary-safe** (F2 — base64,
+  so a `Vault` blob containing `0x0a` no longer corrupts). Sole tier on Linux
+  without libsecret and BSD; a drain-only legacy tier behind the keyring
+  elsewhere; unused on Windows. Design: [FILE_ENCRYPTION.md](FILE_ENCRYPTION.md).
+  **Strategic:** the file last-resort tier is transitional — once keyward is
+  audit-stable it is slated for removal from all platforms (OS-vault-only).
 - **Not independently audited.** Do not entrust other people's high-value secrets
   to keyward until it has been reviewed.
 
