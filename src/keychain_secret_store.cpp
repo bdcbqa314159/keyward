@@ -5,9 +5,11 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <Security/Security.h>
 
+#include <cstring>
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace keyward {
 namespace {
@@ -120,6 +122,40 @@ void KeychainSecretStore::remove(const std::string& name) {
   CFRelease(check);
   if (vst != errSecItemNotFound)
     throw std::runtime_error("keyward: Keychain item still present after delete");
+}
+
+std::vector<std::string> KeychainSecretStore::list() {
+  CFMutableDictionaryRef q = CFDictionaryCreateMutable(nullptr, 0, &kCFTypeDictionaryKeyCallBacks,
+                                                       &kCFTypeDictionaryValueCallBacks);
+  CFDictionarySetValue(q, kSecClass, kSecClassGenericPassword);
+  CFStringRef svc = cfstr(service_);
+  CFDictionarySetValue(q, kSecAttrService, svc);
+  CFRelease(svc);
+  CFDictionarySetValue(q, kSecMatchLimit, kSecMatchLimitAll);
+  CFDictionarySetValue(q, kSecReturnAttributes, kCFBooleanTrue);  // names only, no secret data
+  CFTypeRef result = nullptr;
+  const OSStatus st = SecItemCopyMatching(q, &result);
+  CFRelease(q);
+  if (st == errSecItemNotFound) return {};
+  if (st != errSecSuccess) throw std::runtime_error(statusError("list", st));
+
+  std::vector<std::string> names;
+  CFArrayRef items = reinterpret_cast<CFArrayRef>(result);
+  const CFIndex n = CFArrayGetCount(items);
+  for (CFIndex i = 0; i < n; ++i) {
+    CFDictionaryRef item = reinterpret_cast<CFDictionaryRef>(CFArrayGetValueAtIndex(items, i));
+    CFStringRef acc = reinterpret_cast<CFStringRef>(CFDictionaryGetValue(item, kSecAttrAccount));
+    if (acc == nullptr) continue;
+    const CFIndex cap =
+        CFStringGetMaximumSizeForEncoding(CFStringGetLength(acc), kCFStringEncodingUTF8) + 1;
+    std::string buf(static_cast<size_t>(cap), '\0');
+    if (CFStringGetCString(acc, buf.data(), cap, kCFStringEncodingUTF8)) {
+      buf.resize(std::strlen(buf.c_str()));
+      names.push_back(std::move(buf));
+    }
+  }
+  CFRelease(result);
+  return names;
 }
 
 }  // namespace keyward

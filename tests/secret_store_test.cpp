@@ -185,10 +185,10 @@ TEST(FallbackSecretStore, ReadsFallbackThenMigratesToPrimary) {
   FallbackSecretStore fb(std::make_unique<FileSecretStore>(pp),
                          std::make_unique<FileSecretStore>(fp));
   EXPECT_EQ(fb.get("K").value(), "old");  // served from fallback
-  fb.set("K", "new");                     // migrates to primary
+  fb.set("K", "new");                     // migrates to primary AND evicts the fallback copy
   EXPECT_EQ(fb.get("K").value(), "new");  // primary now wins
   EXPECT_EQ(FileSecretStore(pp).get("K").value(), "new");
-  EXPECT_EQ(FileSecretStore(fp).get("K").value(), "old");  // fallback untouched by set
+  EXPECT_FALSE(FileSecretStore(fp).get("K").has_value());  // fallback copy evicted (H1) — not stale
 
   fb.remove("K");  // remove clears both
   EXPECT_FALSE(FileSecretStore(pp).get("K").has_value());

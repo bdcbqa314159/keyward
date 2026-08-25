@@ -5,10 +5,12 @@
 
 #if defined(__APPLE__)
 
+#include <algorithm>
 #include <cstdlib>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "keyward/keychain_secret_store.hpp"
 
@@ -39,6 +41,10 @@ TEST(KeychainStore, RoundTripAgainstRealKeychain) {
   EXPECT_FALSE(store.get("token").has_value());  // genuine miss -> nullopt, not throw
   store.set("token", "s3cr3t");
   EXPECT_EQ(store.get("token"), "s3cr3t");
+  {
+    auto names = store.list();
+    EXPECT_NE(std::find(names.begin(), names.end(), "token"), names.end());
+  }
   store.set("token", "rotated");  // upsert (update path, no delete-first)
   EXPECT_EQ(store.get("token"), "rotated");
   store.remove("token");  // verified delete

@@ -520,6 +520,11 @@ if(KEYWARD_BUILD_TESTS)
   target_link_libraries(keychain_store_tests PRIVATE keyward GTest::gtest_main)
   gtest_discover_tests(keychain_store_tests)
 
+  # FallbackSecretStore compose (evict-on-set, remove-both, list-union, null guard).
+  add_executable(fallback_secret_store_tests tests/fallback_secret_store_test.cpp)
+  target_link_libraries(fallback_secret_store_tests PRIVATE keyward GTest::gtest_main)
+  gtest_discover_tests(fallback_secret_store_tests)
+
   # Gap 3 stretch — end-to-end Vault-over-real-Credential-Manager smoke test.
   # Opt-in (KEYWARD_HOST_TESTS=1); skips otherwise and off Windows.
   add_executable(windows_vault_smoke_tests tests/windows_vault_smoke_test.cpp)
