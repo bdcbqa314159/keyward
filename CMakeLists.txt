@@ -514,6 +514,12 @@ if(KEYWARD_BUILD_TESTS)
   target_link_libraries(prompter_tests PRIVATE keyward GTest::gtest_main)
   gtest_discover_tests(prompter_tests)
 
+  # macOS Keychain backend. Invalid-UTF-8 guard always runs; the real-keychain
+  # round-trip is opt-in (KEYWARD_HOST_TESTS=1). Skips off Apple.
+  add_executable(keychain_store_tests tests/keychain_store_test.cpp)
+  target_link_libraries(keychain_store_tests PRIVATE keyward GTest::gtest_main)
+  gtest_discover_tests(keychain_store_tests)
+
   # Gap 3 stretch — end-to-end Vault-over-real-Credential-Manager smoke test.
   # Opt-in (KEYWARD_HOST_TESTS=1); skips otherwise and off Windows.
   add_executable(windows_vault_smoke_tests tests/windows_vault_smoke_test.cpp)
