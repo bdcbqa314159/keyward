@@ -8,9 +8,10 @@
 
 namespace keyward {
 
-// Create a verifier blob (salt + Argon2id hash) for `passphrase`. Store it — in
-// the vault, a file, wherever — at setup time, then feed it back to a
-// PassphraseAuthenticator. It reveals nothing about the passphrase.
+// Create a verifier blob (cost-profile version + salt + Argon2id hash) for
+// `passphrase`. Store it — in the vault, a file, wherever — at setup time, then
+// feed it back to a PassphraseAuthenticator. It reveals nothing about the
+// passphrase. Throws std::invalid_argument on an empty passphrase.
 std::string make_passphrase_verifier(std::string_view passphrase);
 
 // Check `passphrase` against a verifier from make_passphrase_verifier, in

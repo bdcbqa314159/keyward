@@ -146,11 +146,12 @@ std::optional<std::string> WindowsCredentialStore::get(const std::string& name) 
 void WindowsCredentialStore::set(const std::string& name, std::string_view value) {
   // Fail closed on oversize: never truncate, never downgrade to a file. Credential
   // Manager caps a generic blob at CRED_MAX_CREDENTIAL_BLOB_SIZE (2560 bytes) —
-  // large tokens (some JWTs, PEM keys) can exceed this. The message carries name +
-  // size only, never the secret value.
+  // large tokens (some JWTs, PEM keys) can exceed this. The message carries the
+  // name and the limit only — never the secret value nor its length (I2: the
+  // actual size is metadata about the secret and this message is often logged).
   if (value.size() > CRED_MAX_CREDENTIAL_BLOB_SIZE) {
-    throw std::length_error("keyward: secret '" + name + "' is " + std::to_string(value.size()) +
-                            " bytes, over the Windows Credential Manager blob limit of " +
+    throw std::length_error("keyward: secret '" + name +
+                            "' exceeds the Windows Credential Manager blob limit of " +
                             std::to_string(CRED_MAX_CREDENTIAL_BLOB_SIZE) + " bytes");
   }
   const std::wstring target = toWide(compoundTarget(app_, name));
