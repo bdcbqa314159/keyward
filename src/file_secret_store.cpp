@@ -78,6 +78,20 @@ void restrictToOwnerWin(const fs::path& p) {
 
 constexpr std::string_view kPlainMagic = "keyward-plain-v1";
 
+// M1: associated data bound into every entry's AEAD tag. `version || salt || name`
+// so a valid ciphertext only opens under its own name (and only in this file, via
+// the per-file salt) — moving an entry's body under another name, or into another
+// file, fails the tag check instead of silently decrypting. version 2 == this scheme.
+constexpr char kAadVersion = 2;
+std::string entryAad(std::string_view name, std::string_view salt) {
+  std::string ad;
+  ad.reserve(1 + salt.size() + name.size());
+  ad.push_back(kAadVersion);
+  ad.append(salt);
+  ad.append(name);
+  return ad;
+}
+
 std::string trimTrailing(std::string v) {
   while (!v.empty() &&
          (v.back() == '\r' || v.back() == '\n' || v.back() == ' ' || v.back() == '\t'))
@@ -325,7 +339,7 @@ std::optional<std::string> FileSecretStore::get(const std::string& name) {
     ensureKey(ef->salt);
     std::string_view nonce(blob.data(), kNonceSize);
     std::string_view sealed(blob.data() + kNonceSize, blob.size() - kNonceSize);
-    std::optional<Secret> pt = aead_open(*key_, nonce, sealed);
+    std::optional<Secret> pt = aead_open(*key_, nonce, sealed, entryAad(name, ef->salt));
     if (!pt)
       throw std::runtime_error("keyward: cannot decrypt '" + name +
                                "' (wrong passphrase or tampered)");
@@ -365,13 +379,13 @@ void FileSecretStore::set(const std::string& name, std::string_view value) {
     ensureKey(ef.salt);
     for (auto& [k, v] : readAll(path_)) {  // opted-in: re-seal every legacy entry under the new key
       std::string nonce = random_bytes(kNonceSize);
-      ef.entries.emplace_back(k, nonce + aead_seal(*key_, nonce, v));
+      ef.entries.emplace_back(k, nonce + aead_seal(*key_, nonce, v, entryAad(k, ef.salt)));
       secure_zero(v.data(), v.size());  // wipe the legacy plaintext once re-sealed
     }
   }
 
   std::string nonce = random_bytes(kNonceSize);
-  std::string blob = nonce + aead_seal(*key_, nonce, value);
+  std::string blob = nonce + aead_seal(*key_, nonce, value, entryAad(name, ef.salt));
   bool found = false;
   for (auto& e : ef.entries)
     if (e.first == name) {

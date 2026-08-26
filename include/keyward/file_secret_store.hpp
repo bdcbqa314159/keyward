@@ -20,7 +20,7 @@ namespace keyward {
 //    CEILING: values are stored in PLAINTEXT — 0600 is access control, not
 //    encryption. Anyone who can read the file reads the secret.
 //  - Encrypted (constructed with a KeyProvider). Each value is sealed with
-//    Argon2id + XChaCha20-Poly1305 (keyward-file-v1 format). The key is derived
+//    Argon2id + XChaCha20-Poly1305 (keyward-file-v2 format). The key is derived
 //    once via the provider and cached for the store's lifetime. Names stay in
 //    the clear, so list()/remove() work WITHOUT the key; get()/set() need it.
 //    An undecryptable present entry throws (fails closed).

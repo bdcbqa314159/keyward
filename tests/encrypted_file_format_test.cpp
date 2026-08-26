@@ -63,10 +63,10 @@ TEST(EncryptedFileFormat, PreservesEntryOrder) {
 }
 
 TEST(EncryptedFileFormat, DetectsMagic) {
-  EXPECT_TRUE(is_encrypted_file("keyward-file-v1\nsalt=AA==\n"));
+  EXPECT_TRUE(is_encrypted_file("keyward-file-v2\nsalt=AA==\n"));
   EXPECT_FALSE(is_encrypted_file("jira=plaintext-secret\n"));  // legacy plaintext
   EXPECT_FALSE(is_encrypted_file(""));                         // empty / new file
-  EXPECT_FALSE(is_encrypted_file("keyward-file-v2\n"));        // a version we don't know
+  EXPECT_FALSE(is_encrypted_file("keyward-file-v3\n"));        // a version we don't know
 }
 
 TEST(EncryptedFileFormat, RejectsLegacyPlaintext) {
@@ -75,21 +75,21 @@ TEST(EncryptedFileFormat, RejectsLegacyPlaintext) {
 }
 
 TEST(EncryptedFileFormat, RejectsMissingSaltHeader) {
-  EXPECT_FALSE(parse_encrypted_file("keyward-file-v1\njira=AAAA\n").has_value());
+  EXPECT_FALSE(parse_encrypted_file("keyward-file-v2\njira=AAAA\n").has_value());
 }
 
 TEST(EncryptedFileFormat, RejectsBadBase64) {
   // '!' isn't in the alphabet; a truncated/garbled entry must not parse partially.
-  EXPECT_FALSE(parse_encrypted_file("keyward-file-v1\nsalt=AAAA\njira=not!base64\n").has_value());
-  EXPECT_FALSE(parse_encrypted_file("keyward-file-v1\nsalt=@@@@\n").has_value());
+  EXPECT_FALSE(parse_encrypted_file("keyward-file-v2\nsalt=AAAA\njira=not!base64\n").has_value());
+  EXPECT_FALSE(parse_encrypted_file("keyward-file-v2\nsalt=@@@@\n").has_value());
 }
 
 TEST(EncryptedFileFormat, RejectsLineWithoutEquals) {
-  EXPECT_FALSE(parse_encrypted_file("keyward-file-v1\nsalt=AAAA\ngarbage-no-equals\n").has_value());
+  EXPECT_FALSE(parse_encrypted_file("keyward-file-v2\nsalt=AAAA\ngarbage-no-equals\n").has_value());
 }
 
 TEST(EncryptedFileFormat, ToleratesTrailingBlankLines) {
-  auto out = parse_encrypted_file("keyward-file-v1\nsalt=AAAA\njira=AAAA\n\n");
+  auto out = parse_encrypted_file("keyward-file-v2\nsalt=AAAA\njira=AAAA\n\n");
   ASSERT_TRUE(out.has_value());
   EXPECT_EQ(out->entries.size(), 1u);
 }

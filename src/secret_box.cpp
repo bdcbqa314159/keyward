@@ -56,11 +56,12 @@ Secret derive_key(std::string_view passphrase, std::string_view salt) {
   return Secret(std::string_view(reinterpret_cast<const char*>(raw.get()), kKeySize));
 }
 
-std::string aead_seal(const Secret& key, std::string_view nonce, std::string_view plaintext) {
+std::string aead_seal(const Secret& key, std::string_view nonce, std::string_view plaintext,
+                      std::string_view ad) {
   uint8_t mac[kMacSize] = {};
   std::vector<uint8_t> cipher(plaintext.size());
-  crypto_aead_lock(cipher.data(), mac, u8(key.view()), u8(nonce), nullptr, 0, u8(plaintext),
-                   plaintext.size());
+  crypto_aead_lock(cipher.data(), mac, u8(key.view()), u8(nonce), ad.empty() ? nullptr : u8(ad),
+                   ad.size(), u8(plaintext), plaintext.size());
   std::string out;
   out.reserve(kMacSize + cipher.size());
   out.append(reinterpret_cast<const char*>(mac), kMacSize);
@@ -68,16 +69,16 @@ std::string aead_seal(const Secret& key, std::string_view nonce, std::string_vie
   return out;
 }
 
-std::optional<Secret> aead_open(const Secret& key, std::string_view nonce,
-                                std::string_view sealed) {
+std::optional<Secret> aead_open(const Secret& key, std::string_view nonce, std::string_view sealed,
+                                std::string_view ad) {
   if (sealed.size() < kMacSize) return std::nullopt;
   const uint8_t* mac = u8(sealed);
   const uint8_t* cipher = u8(sealed) + kMacSize;
   std::size_t cipher_size = sealed.size() - kMacSize;
 
   std::vector<uint8_t> out(cipher_size);
-  int rc = crypto_aead_unlock(out.data(), mac, u8(key.view()), u8(nonce), nullptr, 0, cipher,
-                              cipher_size);
+  int rc = crypto_aead_unlock(out.data(), mac, u8(key.view()), u8(nonce),
+                              ad.empty() ? nullptr : u8(ad), ad.size(), cipher, cipher_size);
   if (rc != 0) return std::nullopt;  // wrong key/nonce or tampered
   Secret plaintext(std::string_view(reinterpret_cast<const char*>(out.data()), cipher_size));
   crypto_wipe(out.data(), out.size());
