@@ -29,11 +29,17 @@ Secret derive_key(std::string_view passphrase, std::string_view salt);
 // XChaCha20-Poly1305. Returns mac(kMacSize) || ciphertext (ciphertext is the
 // same length as plaintext). The nonce MUST be unique per key — use a fresh
 // random nonce per call, or a distinct nonce per entry under a shared key.
-std::string aead_seal(const Secret& key, std::string_view nonce, std::string_view plaintext);
+// `ad` is authenticated-but-not-encrypted associated data: bind context that the
+// ciphertext must not be replayed out of (e.g. an entry's name), so a valid blob
+// only opens under the SAME ad. Empty by default.
+std::string aead_seal(const Secret& key, std::string_view nonce, std::string_view plaintext,
+                      std::string_view ad = {});
 
 // Reverse aead_seal: `sealed` is mac || ciphertext. Returns the plaintext in
-// secure memory, or std::nullopt if the key/nonce are wrong, the data was
+// secure memory, or std::nullopt if the key/nonce/ad are wrong, the data was
 // tampered with, or `sealed` is malformed (shorter than a MAC). Never throws.
-std::optional<Secret> aead_open(const Secret& key, std::string_view nonce, std::string_view sealed);
+// `ad` must match the value passed to aead_seal.
+std::optional<Secret> aead_open(const Secret& key, std::string_view nonce, std::string_view sealed,
+                                std::string_view ad = {});
 
 }  // namespace keyward

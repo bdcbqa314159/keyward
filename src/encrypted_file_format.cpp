@@ -7,7 +7,7 @@
 namespace keyward {
 namespace {
 
-constexpr std::string_view kMagic = "keyward-file-v1";
+constexpr std::string_view kMagic = "keyward-file-v2";
 constexpr std::string_view kSaltKey = "salt=";
 
 // One line without its terminator; strips a trailing '\r' so CRLF files parse.

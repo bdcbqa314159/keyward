@@ -182,7 +182,7 @@ TEST(FileEncryption, CorruptMagicLineFailsClosed) {
     s.set("token", "REAL");
   }
   std::string raw = readRaw(tmp.path);
-  raw[0] = 'X';  // "keyward-file-v1" -> "Xeyward-file-v1"
+  raw[0] = 'X';  // "keyward-file-v2" -> "Xeyward-file-v2"
   writeRaw(tmp.path, raw);
 
   FileSecretStore s{tmp.path, provider("pw")};
@@ -243,7 +243,7 @@ TEST(FileEncryption, DoesNotSealUnderStaleKeyAfterSaltChange) {
 // not fed into derive_key — fail closed, and never crash/abort.
 TEST(FileEncryption, RejectsMalformedSaltLength) {
   TempFile tmp("badsalt");
-  writeRaw(tmp.path, "keyward-file-v1\nsalt=\ntoken=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==\n");
+  writeRaw(tmp.path, "keyward-file-v2\nsalt=\ntoken=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==\n");
   FileSecretStore s{tmp.path, provider("pw")};
   EXPECT_THROW(s.get("token"), std::runtime_error);
 }
@@ -300,4 +300,25 @@ TEST(FilePlaintext, ReadsLegacyRawThenUpgrades) {
   s.set("new", "x");                                              // rewrites in v1
   EXPECT_EQ(readRaw(tmp.path).rfind("keyward-plain-v1", 0), 0u);  // now v1
   EXPECT_EQ(s.get("simple"), "value");                            // still readable
+}
+
+// M1: an entry's sealed body carries its name in the AEAD associated data, so
+// swapping two entries' ciphertexts on disk (names left in place) must fail the
+// tag check — you can't relabel `readonly` as `admin` under the same key.
+TEST(FileEncryption, RejectsCrossEntryBodySwap) {
+  TempFile tmp("swap");
+  {
+    FileSecretStore store{tmp.path, provider("pw")};
+    store.set("readonly", "LOW");
+    store.set("admin", "HIGH");
+  }
+  auto ef = keyward::parse_encrypted_file(readRaw(tmp.path));
+  ASSERT_TRUE(ef.has_value());
+  ASSERT_EQ(ef->entries.size(), 2u);
+  std::swap(ef->entries[0].second, ef->entries[1].second);  // swap bodies, keep names
+  writeRaw(tmp.path, keyward::format_encrypted_file(*ef));
+
+  FileSecretStore s{tmp.path, provider("pw")};
+  EXPECT_THROW(s.get("readonly"), std::runtime_error);  // body was admin's -> AD mismatch
+  EXPECT_THROW(s.get("admin"), std::runtime_error);
 }
