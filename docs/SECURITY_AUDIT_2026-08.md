@@ -17,6 +17,27 @@ authenticator layer (`authenticator`, `passphrase_/biometric_/polkit_`, fallback
 (backup, disk image, sync folder); **(B)** a same-uid process; **(C)** feeds
 crafted bytes to any parser.
 
+> **Remediation status (updated 2026-08-27).** This report is the round-2
+> snapshot and its finding text is left as-written. The following have since been
+> fixed on `main` and will be re-checked by an independent round-3 pass — do not
+> read the findings below as still-open:
+> - **C1–C3, M7, L4, L5** (macOS Keychain) — backend rewritten: `errSecItemNotFound`
+>   is the only "absent" status, atomic upsert, verified remove, invalid-UTF-8
+>   guard, `WhenUnlockedThisDeviceOnly` accessibility. Host-tested on real
+>   hardware. So **"macOS Keychain ✅" is now true** — the note at the end of this
+>   Summary section reflects the round-2 state, not `main`.
+> - **H1, H2, L8, M6** (fallback compose) — evict-on-migrate, remove reaches both
+>   tiers, null-tier guard, `list()` union so `Vault::list()` works on all platforms.
+> - **M1 / I3** (file store) — entry name+salt+version bound as AEAD associated data
+>   (magic → `keyward-file-v2`).
+> - **M3, L1, L2, L3, L6, I2** — verifier raised to the 19 MiB OWASP floor and
+>   versioned; env passphrase held in secure memory; `Secret` fails closed on
+>   alloc failure; empty enrollment rejected; CLI prompter wipes its local; Windows
+>   oversize message drops the secret length.
+>
+> Still open (mostly platform-specific, need Windows/Linux hardware): **M2, M4,
+> M5, M8, H3, L7, U1, U2**.
+
 **Method note.** Findings marked *verified* were read and confirmed at the cited
 `file:line` in this pass. The three macOS-Critical findings, the file-store AAD
 finding, the polkit refusal-downgrade, and the constant-time verifier were
