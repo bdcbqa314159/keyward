@@ -80,7 +80,11 @@ keyward to store and retrieve.
   size is impractical — so the "never swapped" guarantee is scoped to the *key*,
   not to the derivation scratch.
 - Backends: macOS Keychain ✅, Windows Credential Manager ✅, Linux Secret
-  Service via libsecret ✅ (`0600` file remains the fallback everywhere).
+  Service via libsecret ✅ (`0600` file remains the fallback everywhere). macOS
+  items are written `WhenUnlockedThisDeviceOnly` (device-bound, never
+  iCloud-synced); `set` is an atomic upsert, `remove` verifies deletion, and a
+  genuine `errSecItemNotFound` is the *only* status mapped to "absent" — every
+  other `OSStatus` throws rather than reading through to the file tier.
 - ✅ `decode_fields` is fuzzed in CI on every PR (libFuzzer + ASan, seeded corpus
   in `tests/fuzz/corpus/`, ~17k exec/s).
 - ✅ **A locked Linux keyring fails closed.** A locked collection still answers

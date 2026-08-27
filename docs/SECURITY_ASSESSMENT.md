@@ -39,8 +39,11 @@ integration, the schema, in-process handling, and the encrypted-file crypto.
    list/remove, legacy-plaintext migration, atomic durable writes + permissions
    (0600 / 0700 / Windows DACL), fail-closed on wrong passphrase/tamper.
 5. **Platform backends** (`keychain_*`, `windows_credential_*`,
-   `secret_service_*`): correct OS-API usage — Keychain ACL, CredMan flags,
-   libsecret attributes/locking, the Windows-CredMan-only fail-closed decision.
+   `secret_service_*`): correct OS-API usage — Keychain accessibility class
+   (`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`; device-bound, never
+   iCloud-synced — note this is an accessibility protection class, *not* a
+   per-item `SecAccessControl`/ACL), CredMan flags, libsecret attributes/locking,
+   the Windows-CredMan-only fail-closed decision.
 6. **The agent** (when built — see [AGENT_SCOPE.md](AGENT_SCOPE.md)): the IPC /
    socket / caller-trust boundary. This is the one *new* attack surface keyward
    introduces and the highest-value review target; it is not yet implemented.
