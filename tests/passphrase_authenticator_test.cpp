@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -44,6 +45,23 @@ TEST(PassphraseVerifier, FreshSaltEachTime) {
 TEST(PassphraseVerifier, RejectsMalformedVerifier) {
   EXPECT_FALSE(verify_passphrase("x", ""));
   EXPECT_FALSE(verify_passphrase("x", "too short"));
+}
+
+// L3: enrolling an empty passphrase would mint a verifier that unlocks on "".
+TEST(PassphraseVerifier, RejectsEmptyEnrollment) {
+  EXPECT_THROW(make_passphrase_verifier(""), std::invalid_argument);
+}
+
+// M3: the blob is version ‖ 16-byte salt ‖ 32-byte hash, and a verifier tagged
+// with a cost profile we don't know must fail closed (we can't reproduce it).
+TEST(PassphraseVerifier, CarriesCostProfileVersion) {
+  auto v = make_passphrase_verifier("pw");
+  ASSERT_EQ(v.size(), 1u + 16u + 32u);
+  EXPECT_EQ(static_cast<unsigned char>(v[0]), 1u);  // current profile id
+
+  std::string unknown = v;
+  unknown[0] = static_cast<char>(0xFE);  // retag to a profile that doesn't exist
+  EXPECT_FALSE(verify_passphrase("pw", unknown));
 }
 
 TEST(PassphraseAuth, CorrectAllows) {

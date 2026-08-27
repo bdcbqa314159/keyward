@@ -3,6 +3,8 @@
 #include <iostream>
 #include <string>
 
+#include "keyward/secure_memory.hpp"  // secure_zero (L6: wipe gathered secret)
+
 #if defined(_WIN32)
 #include <windows.h>
 #else
@@ -77,6 +79,7 @@ bool CliPrompter::collect(std::string_view service, PromptReason reason,
     if (line.empty() && in_.eof()) return false;     // Ctrl-D / stream ended -> cancel
     if (line.empty() && !f.value.empty()) continue;  // blank keeps the prefilled value
     f.value = line;
+    secure_zero(line.data(), line.size());  // L6: don't leave the gathered secret in this local
   }
   return true;
 }

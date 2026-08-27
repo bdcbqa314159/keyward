@@ -2,13 +2,17 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "keyward/fallback_secret_store.hpp"
 #include "keyward/file_secret_store.hpp"
+#include "keyward/key_provider.hpp"  // PassphraseKeyProvider, KeyProvider
 #include "keyward/keychain_secret_store.hpp"
+#include "keyward/secret.hpp"  // Secret (secure-memory hold for L1)
 #include "keyward/secret_service_store.hpp"
 #include "keyward/windows_credential_store.hpp"
 
@@ -27,9 +31,14 @@ constexpr const char* kSilenceEnv = "KEYWARD_SILENCE_PLAINTEXT_WARNING";
 std::unique_ptr<KeyProvider> envKeyProvider() {
   const char* pass = std::getenv(kPassphraseEnv);
   if (pass == nullptr || *pass == '\0') return nullptr;
-  std::string value(pass);
+  // L1: keep the passphrase in secure memory for the store's lifetime, not a
+  // long-lived plaintext std::string. shared_ptr because PassphraseSource is a
+  // std::function (copyable); Secret is move-only. Each call materializes a
+  // transient std::string the consumer wipes after derive — the same residual
+  // the interactive path already accepts.
+  auto held = std::make_shared<Secret>(std::string_view(pass));
   return std::make_unique<PassphraseKeyProvider>(
-      [value = std::move(value)](std::string_view) -> std::optional<std::string> { return value; });
+      [held](std::string_view) -> std::optional<std::string> { return std::string(held->view()); });
 }
 
 fs::path homeBase() {

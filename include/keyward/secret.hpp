@@ -1,6 +1,7 @@
 #pragma once
 #include <cstddef>
 #include <cstring>
+#include <new>  // std::bad_alloc (L2: secure_alloc failure)
 #include <string>
 #include <string_view>
 
@@ -23,6 +24,9 @@ class Secret {
  public:
   explicit Secret(std::string_view bytes) : size_(bytes.size()) {
     data_ = static_cast<unsigned char*>(secure_alloc(size_));
+    // L2: secure_alloc (sodium_malloc) can fail (mlock quota, no secure pages,
+    // huge input). Fail closed with bad_alloc instead of memcpy'ing into nullptr.
+    if (size_ && data_ == nullptr) throw std::bad_alloc();
     if (size_) std::memcpy(data_, bytes.data(), size_);
   }
   ~Secret() { secure_free(data_); }  // secure_free zeroes the region before releasing
