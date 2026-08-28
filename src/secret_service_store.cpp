@@ -150,17 +150,19 @@ std::optional<std::string> SecretServiceStore::get(const std::string& name) {
   // cannot tell which is current. Guessing there would hand back a stale secret,
   // so we refuse (fail closed). The next set() collapses the duplicates.
   std::optional<std::string> best;
-  guint64 bestAt = 0;
+  guint64 bestAt = 0;    // modified time of the best READABLE item
+  guint64 newestAt = 0;  // modified time of the NEWEST matched item, readable or not
   bool ambiguous = false;
   std::size_t matched = 0, readable = 0;
   for (GList* node = items.get(); node != nullptr; node = node->next) {
     auto* item = static_cast<SecretItem*>(node->data);
     ++matched;
+    const guint64 at = secret_item_get_modified(item);
+    if (at > newestAt) newestAt = at;  // M5: consult unreadable items' timestamps too
     ValuePtr value(secret_item_get_secret(item));
     std::optional<std::string> bytes = valueBytes(value.get());
     if (!bytes) continue;  // present but unreadable — still locked (see below)
     ++readable;
-    const guint64 at = secret_item_get_modified(item);
     if (!best || at > bestAt) {
       best = std::move(bytes);
       bestAt = at;
@@ -176,6 +178,16 @@ std::optional<std::string> SecretServiceStore::get(const std::string& name) {
   // to a weaker store or overwrite the real entry. Refuse instead.
   if (matched > 0 && readable == 0) {
     throw std::runtime_error("keyward: '" + name + "' exists in the Secret Service but its value " +
+                             "could not be read — the keyring is locked (unlock it and retry)");
+  }
+  // M5: a STRICTLY newer matched item exists but was unreadable — serving the
+  // older readable sibling would hand back a stale value while the current one
+  // sits in a collection whose unlock was declined. Refuse. (Same-second ties
+  // are indistinguishable at `modified`'s one-second granularity, so this only
+  // fires on a genuinely later timestamp — consistent with the tie handling below.)
+  if (best && newestAt > bestAt) {
+    throw std::runtime_error("keyward: '" + name +
+                             "' has a newer value in the Secret Service that "
                              "could not be read — the keyring is locked (unlock it and retry)");
   }
   if (ambiguous) {
@@ -222,14 +234,17 @@ void SecretServiceStore::remove(const std::string& name) {
       secret_service_clear_sync(nullptr, keywardSchema(), attrs.get(), nullptr, &rawErr);
   ErrorPtr err(rawErr);
   if (err) fail("clear for '" + name + "'", err);
-  if (removed) return;
 
-  // FALSE with NO error is ambiguous, and the benign reading is the dangerous
-  // one. On a LOCKED collection clear removes nothing, sets no error, and
-  // returns FALSE — identical to a genuine miss. Treating that as "already
-  // gone" tells a caller revoking a credential that it was deleted while it sits
-  // in the keyring intact. Attributes stay readable while locked, so a search
-  // separates the two: still matched => we were refused, not idempotent.
+  // Do NOT early-return on `removed`. clear returns TRUE if it deleted AT LEAST
+  // ONE match, but duplicates in a locked / non-default / read-only collection
+  // survive it (M4) — and get() searches with UNLOCK, so a caller told the
+  // credential was revoked could still read a survivor. So verify UNCONDITIONALLY.
+  //
+  // The removed==FALSE / no-error case is separately ambiguous: on a LOCKED
+  // collection clear removes nothing, sets no error, and returns FALSE —
+  // identical to a genuine miss. Attributes stay readable while locked, so the
+  // same survivor search separates the two: still matched => refused, not gone.
+  (void)removed;
   rawErr = nullptr;
   ItemListPtr survivors(secret_service_search_sync(nullptr, keywardSchema(), attrs.get(),
                                                    SECRET_SEARCH_ALL, nullptr, &rawErr));
