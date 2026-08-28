@@ -223,6 +223,11 @@ std::vector<std::string> WindowsCredentialStore::list() {
       if (target.size() > suffix.size() &&
           target.compare(target.size() - suffix.size(), suffix.size(), suffix) == 0)
         names.push_back(target.substr(0, target.size() - suffix.size()));
+      // H3: CredEnumerateW returns every credential's CredentialBlob (the plaintext
+      // of the whole namespace), and CredFree does not zero it. Scrub each blob
+      // before freeing — same reason readCredential does, over a larger buffer.
+      if (creds[i]->CredentialBlob != nullptr && creds[i]->CredentialBlobSize != 0)
+        SecureZeroMemory(creds[i]->CredentialBlob, creds[i]->CredentialBlobSize);
     }
     CredFree(creds);
   }
