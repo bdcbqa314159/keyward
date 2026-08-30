@@ -1,9 +1,9 @@
-// defaultStorePath + the encrypting overload of defaultSecretStore. The
-// two-arg overload is thin wiring — it passes the KeyProvider to the file tier's
-// encrypting constructor. That the file tier encrypts is proven by
-// file_store_encryption_tests; that defaultSecretStore reaches it end-to-end is
-// platform-dependent (keychain-fronted) and lives in the host-gated vault
-// smokes. Here we test the parts that are safe and pure in normal CI.
+// defaultStorePath + the two overloads of defaultSecretStore. Where an OS vault
+// exists (macOS/Windows/Linux+libsecret — the CI platforms) the vault is the
+// SOLE store and the key source is ignored: there is no file fallback behind it.
+// The key source only matters on a no-vault platform, where it encrypts the file
+// tier (proven by file_store_encryption_tests). Here we test the parts that are
+// safe and pure in normal CI: that construction succeeds and stays vault-only.
 #include "keyward/default_store.hpp"
 
 #include <gtest/gtest.h>
@@ -57,11 +57,11 @@ TEST(DefaultStore, NullKeySourceEqualsPlaintextOverload) {
   EXPECT_EQ(a->location(), b->location());  // same store, same tier
 }
 
-// The KEYWARD_PASSPHRASE on-ramp path constructs cleanly (env -> provider ->
-// encrypted file tier). Construction is backend-free; this exercises the env
-// code path under the sanitizer/leak jobs. The encryption itself is proven in
-// file_store_encryption_tests. Silence the sole-tier plaintext warning so the
-// no-vault CI runners don't print during the test.
+// The KEYWARD_PASSPHRASE on-ramp constructs cleanly. On a no-vault platform this
+// reaches the encrypted file tier (env -> provider -> encrypt); on a vault
+// platform (the CI runners) the vault is returned and the env is simply ignored.
+// Either way construction succeeds and touches no backend. Silence the sole-tier
+// plaintext warning so the no-vault case doesn't print during the test.
 TEST(DefaultStore, EnvPassphraseOnRampConstructs) {
   setEnv("KEYWARD_SILENCE_PLAINTEXT_WARNING", "1");
   setEnv("KEYWARD_PASSPHRASE", "deployment-secret");
