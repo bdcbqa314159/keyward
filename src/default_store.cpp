@@ -36,6 +36,15 @@ std::unique_ptr<KeyProvider> envKeyProvider() {
   // transient std::string the consumer wipes after derive — the same residual
   // the interactive path already accepts.
   auto held = std::make_shared<Secret>(std::string_view(pass));
+  // R3-8: now that the passphrase lives in secure memory (held), best-effort
+  // remove it from the process environment so it isn't inherited by child
+  // processes or readable via /proc/<pid>/environ for the process lifetime. `pass`
+  // must not be used after this (unsetenv may invalidate it) — it isn't.
+#if defined(_WIN32)
+  _putenv_s(kPassphraseEnv, "");
+#else
+  ::unsetenv(kPassphraseEnv);
+#endif
   return std::make_unique<PassphraseKeyProvider>(
       [held](std::string_view) -> std::optional<std::string> { return std::string(held->view()); });
 }
