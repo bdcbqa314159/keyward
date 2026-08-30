@@ -94,9 +94,14 @@ first and record a refutation if so.
 
 ---
 
-## Not a platform-agent item — L7 is macOS (handle directly)
+## Not a platform-agent item — L7 is macOS (FIXED)
 
-**L7 (Low)** lives in `src/biometric_authenticator.cpp` (~:38, :45-50):
+> **Status: fixed.** `LAErrorBiometryLockout` / `LAErrorUserFallback` now map to
+> `Authorization::Unavailable`, so a locked-out user with a passphrase tier is no
+> longer stranded. The runtime lockout path needs a real locked-out Touch ID
+> sensor to exercise; the mapping is low-risk and mirrors the Windows default.
+
+**L7 (Low)** lived in `src/biometric_authenticator.cpp` (~:38, :45-50):
 `LAErrorBiometryLockout` and `LAErrorUserFallback` fall into `else → Denied`, which
 does **not** fall through, so a locked-out user is stranded even with a passphrase
 tier present (inverse error — over-denying; fails closed, not a bypass). Fix is a
