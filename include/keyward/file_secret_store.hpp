@@ -15,6 +15,12 @@ namespace keyward {
 
 // Portable fallback: one owner-only (0600) file in a 0700 directory.
 //
+// NAME CONSTRAINT (R1-F5): the on-disk format is line-based `name=value`, so a
+// name must not contain `=` or a newline — either corrupts the record on
+// read-back. Names are caller-chosen service identifiers, so this is a caller
+// contract, not attacker-facing input. The OS vault backends store names as
+// opaque attributes and have no such restriction.
+//
 // Two modes:
 //  - Plaintext (the path-only constructor). `NAME=value` lines. SECURITY
 //    CEILING: values are stored in PLAINTEXT — 0600 is access control, not
