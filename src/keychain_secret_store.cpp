@@ -103,6 +103,12 @@ void KeychainSecretStore::set(const std::string& name, std::string_view value) {
   CFMutableDictionaryRef attrs = CFDictionaryCreateMutable(
       nullptr, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
   CFDictionarySetValue(attrs, kSecValueData, data);
+  // R3-9: reassert the accessibility class on update too, not just on add. An
+  // item first created by another tool (e.g. Python keyring uses the weaker,
+  // syncable kSecAttrAccessibleWhenUnlocked) would otherwise keep its foreign
+  // class through our writes — so the "WhenUnlockedThisDeviceOnly, device-bound"
+  // invariant would hold only for items keyward created.
+  CFDictionarySetValue(attrs, kSecAttrAccessible, kSecAttrAccessibleWhenUnlockedThisDeviceOnly);
   OSStatus st = SecItemUpdate(q, attrs);
   CFRelease(attrs);
   if (st == errSecItemNotFound) {
