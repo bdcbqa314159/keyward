@@ -80,17 +80,21 @@ keyward to store and retrieve.
   size is impractical — so the "never swapped" guarantee is scoped to the *key*,
   not to the derivation scratch.
 - Backends: macOS Keychain ✅, Windows Credential Manager ✅, Linux Secret
-  Service via libsecret ✅ (`0600` file remains the fallback everywhere). macOS
-  items are written `WhenUnlockedThisDeviceOnly` (device-bound, never
-  iCloud-synced); `set` is an atomic upsert, `remove` verifies deletion, and a
-  genuine `errSecItemNotFound` is the *only* status mapped to "absent" — every
-  other `OSStatus` throws rather than reading through to the file tier.
+  Service via libsecret ✅. Where an OS vault exists it is the **sole** store —
+  there is no file tier behind it (a plaintext file behind the vault was an
+  injection surface: an attacker with file-write could plant a credentials file
+  served for any key absent from the vault, so it was removed). The file store is
+  only the sole tier where no vault exists. macOS items are written
+  `WhenUnlockedThisDeviceOnly` (device-bound, never iCloud-synced); `set` is an
+  atomic upsert, `remove` verifies deletion, and a genuine `errSecItemNotFound`
+  is the *only* status mapped to "absent" — every other `OSStatus` throws.
 - ✅ `decode_fields` is fuzzed in CI on every PR (libFuzzer + ASan, seeded corpus
   in `tests/fuzz/corpus/`, ~17k exec/s).
 - ✅ **A locked Linux keyring fails closed.** A locked collection still answers
   searches — attributes readable, secrets withheld — so the backend used to read
-  it as "no such secret" and, through `defaultSecretStore`'s fallback chain, drop
-  to the plaintext file store. `get` now unlocks (prompting if the OS asks) and
+  it as "no such secret", reporting a demonstrably-present secret as absent (and,
+  before the file tier was removed from behind the vault, could even drop through
+  to a plaintext fallback). `get` now unlocks (prompting if the OS asks) and
   throws if the value is still unreadable; `remove` verifies rather than trusting
   a silent no-op that would tell a caller a credential was revoked when it was
   not. Regression test: `SecretServiceLocked.Isolated`, which runs against a
@@ -134,10 +138,12 @@ keyward to store and retrieve.
   credentials, bypassing the AEAD; migration of a genuine legacy plaintext file is
   now an explicit opt-in), and the plaintext tier is **binary-safe** (F2 — base64,
   so a `Vault` blob containing `0x0a` no longer corrupts). Sole tier on Linux
-  without libsecret and BSD; a drain-only legacy tier behind the keyring
-  elsewhere; unused on Windows. Design: [FILE_ENCRYPTION.md](FILE_ENCRYPTION.md).
-  **Strategic:** the file last-resort tier is transitional — once keyward is
-  audit-stable it is slated for removal from all platforms (OS-vault-only).
+  without libsecret and BSD; **no longer present behind an OS vault** (removed —
+  see the backends bullet above); unused on Windows. Design:
+  [FILE_ENCRYPTION.md](FILE_ENCRYPTION.md).
+  **Strategic:** the file last-resort tier is transitional. The behind-the-vault
+  fallback is now removed; the no-vault sole tier remains and is slated for the
+  same treatment as keyward reaches OS-vault-only.
 - **Not independently audited.** Do not entrust other people's high-value secrets
   to keyward until it has been reviewed.
 

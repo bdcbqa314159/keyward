@@ -13,25 +13,25 @@ namespace keyward {
 //   Windows     : %APPDATA%\<app>\credentials
 std::filesystem::path defaultStorePath(const std::string& app);
 
-// The best store for this platform, namespaced to `app`: the OS keychain in
-// front of the 0600 file fallback, so an existing file secret migrates to the
-// keychain on the next write. Falls back to the file alone where no keychain
-// backend exists (Linux without libsecret, BSD, ...).
+// The best store for this platform, namespaced to `app`. Where an OS vault
+// exists it is the SOLE store — Keychain (macOS), Credential Manager (Windows),
+// or Secret Service (Linux with libsecret). There is deliberately NO file
+// fallback behind the vault: a plaintext file behind it was an injection surface
+// (an attacker with file-write could plant a credentials file that gets served
+// for any key absent from the vault), so the vault stands alone. To read or
+// migrate secrets left in a legacy file tier, construct a FileSecretStore
+// explicitly.
 //
-// The fallback file is PLAINTEXT unless a key source is given. As a headless
-// on-ramp, if the KEYWARD_PASSPHRASE environment variable is set this call uses
-// it to encrypt the file tier (no interactive prompt) — equivalent to passing a
-// passphrase-backed KeyProvider to the overload below. When the file store is
-// the SOLE tier and stays plaintext, a one-line warning is printed to stderr
-// (silence it with KEYWARD_SILENCE_PLAINTEXT_WARNING).
+// Only where NO OS vault exists (Linux without libsecret, BSD, ...) does this
+// return a file store. That file is PLAINTEXT unless a key source is given; as a
+// headless on-ramp, setting the KEYWARD_PASSPHRASE environment variable encrypts
+// it (Argon2id + XChaCha20-Poly1305) with no interactive prompt. A plaintext
+// sole tier prints a one-line stderr warning (silence: KEYWARD_SILENCE_PLAINTEXT_WARNING).
 std::unique_ptr<SecretStore> defaultSecretStore(const std::string& app);
 
-// As above, but the file tier — whether it's the fallback behind a keychain or
-// the sole store — encrypts at rest with the given key source (Argon2id +
-// XChaCha20-Poly1305). Use this on platforms where the file store may hold
-// secrets (no OS vault) and you don't want them in plaintext. The key source is
-// unused where a native vault is the only tier (Windows). Passing nullptr is
-// equivalent to the plaintext overload above.
+// As above, but encrypts the file tier with the given key source when the file
+// tier is in play (i.e. no OS vault). Where a native vault is the store, the key
+// source is unused. Passing nullptr is equivalent to the one-arg overload.
 std::unique_ptr<SecretStore> defaultSecretStore(const std::string& app,
                                                 std::unique_ptr<KeyProvider> key_source);
 
