@@ -35,3 +35,12 @@ MAC will not verify in a fuzz build. The fuzzer covers parse-and-reject, not
 parse-and-accept — which is what it would cover anyway, since no mutation gets
 past a 128-bit MAC. The accept path is covered by `secret_box_tests` in a normal
 build. See `docs/THREAT_MODEL.md`.
+
+## `parse_encrypted_file/`
+The encrypted **file store's** read path, which `unseal/` does not exercise:
+`secret_box`'s one-shot framing (`salt|nonce|mac|cipher`) has no production
+callers, while the file store reads a line-based `keyward-file-v2` text format
+(magic, `salt=`, `name=<base64>` entries) through `parse_encrypted_file` ->
+`base64_decode` -> `aead_open`. Two seeds: `seed_structural` (valid magic + salt
++ one entry, so mutation starts past the magic/base64 gates and reaches
+`aead_open`) and `seed_nomagic` (exercises the no-magic fail-closed reject).

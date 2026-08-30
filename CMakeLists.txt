@@ -606,7 +606,7 @@ if(KEYWARD_BUILD_FUZZERS)
   # configure on any OS ever sees it — a Release build is byte-identical with or
   # without this block. src/secret_box.cpp also emits a #warning when it is on.
   target_compile_definitions(keyward PRIVATE KEYWARD_FUZZ_CHEAP_KDF)
-  foreach(fuzz decode_fields unseal)
+  foreach(fuzz decode_fields unseal parse_encrypted_file)
     add_executable(fuzz_${fuzz} tests/fuzz/fuzz_${fuzz}.cpp)
     target_link_libraries(fuzz_${fuzz} PRIVATE keyward)
     target_compile_options(fuzz_${fuzz} PRIVATE -fsanitize=fuzzer,address)

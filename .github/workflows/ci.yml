@@ -143,6 +143,17 @@ jobs:
           ./build/fuzz/fuzz_unseal build/fuzz/found-unseal tests/fuzz/corpus/unseal \
             -max_total_time=60 -print_final_stats=1
 
+      # The file store's actual read path: parse_encrypted_file -> base64 ->
+      # aead_open on attacker bytes. unseal() above fuzzes a framing no production
+      # code uses; this covers the one the encrypted file store reads.
+      - name: Fuzz parse_encrypted_file
+        if: steps.detect.outputs.cmake == 'true'
+        run: |
+          mkdir -p build/fuzz/found-pef
+          ./build/fuzz/fuzz_parse_encrypted_file build/fuzz/found-pef \
+            tests/fuzz/corpus/parse_encrypted_file \
+            -max_total_time=60 -print_final_stats=1
+
       # A crash/leak/timeout writes its reproducer to the working directory;
       # without this the input that triggered it dies with the runner.
       - name: Upload crash reproducers
