@@ -45,6 +45,13 @@ Authorization BiometricAuthenticator::authorize(std::string_view service, std::s
                   } else if (e.code == LAErrorUserCancel || e.code == LAErrorSystemCancel ||
                              e.code == LAErrorAppCancel) {
                     result = Authorization::Cancelled;
+                  } else if (e.code == LAErrorBiometryLockout || e.code == LAErrorUserFallback) {
+                    // L7: biometrics cannot answer right now — a lockout (too many
+                    // failed attempts) or the user tapping "Enter Password". That's
+                    // "cannot ask biometrics", not a denial, so degrade to
+                    // Unavailable and let a FallbackAuthenticator reach the
+                    // passphrase tier instead of stranding a user who has one.
+                    result = Authorization::Unavailable;
                   } else {
                     result = Authorization::Denied;
                   }
