@@ -11,6 +11,8 @@
 #include <utility>
 #include <vector>
 
+#include "keyward/secure_memory.hpp"  // secure_zero (R3-2: scrub CF buffer)
+
 namespace keyward {
 namespace {
 
@@ -78,8 +80,15 @@ std::optional<std::string> KeychainSecretStore::get(const std::string& name) {
   if (st != errSecSuccess) throw std::runtime_error(statusError("read", st));
   if (result == nullptr) return std::nullopt;
   CFDataRef data = reinterpret_cast<CFDataRef>(result);
-  std::string out(reinterpret_cast<const char*>(CFDataGetBytePtr(data)),
-                  static_cast<size_t>(CFDataGetLength(data)));
+  const CFIndex len = CFDataGetLength(data);
+  std::string out(reinterpret_cast<const char*>(CFDataGetBytePtr(data)), static_cast<size_t>(len));
+  // R3-2: scrub the plaintext from the CF buffer before releasing it. CFRelease
+  // frees without zeroing, so the secret would linger in freed heap — the same
+  // leak the Windows (SecureZeroMemory) and libsecret (secret_value_unref)
+  // backends already close. SecItemCopyMatching returned a +1 CFData we own and
+  // are about to free, so overwriting it in place is safe; secure_zero is not
+  // optimized away.
+  if (len > 0) secure_zero(const_cast<UInt8*>(CFDataGetBytePtr(data)), static_cast<size_t>(len));
   CFRelease(result);
   return out;
 }

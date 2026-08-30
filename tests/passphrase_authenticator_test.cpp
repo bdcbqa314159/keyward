@@ -83,3 +83,14 @@ TEST(PassphraseAuth, CancelReturnsCancelled) {
   PassphraseAuthenticator auth{make_passphrase_verifier("pw"), scripted({std::nullopt})};
   EXPECT_EQ(auth.authorize("jira", "read"), Authorization::Cancelled);
 }
+
+// R3-4: authorize MUST NOT throw. A source that throws (EOF, TUI failure, or a
+// bad_alloc from the Argon2 buffer) maps to Unavailable, not a propagating throw.
+TEST(PassphraseAuth, InternalErrorMapsToUnavailable) {
+  PassphraseAuthenticator auth{
+      make_passphrase_verifier("pw"),
+      [](std::string_view) -> std::optional<std::string> { throw std::runtime_error("boom"); }};
+  Authorization result = Authorization::Allowed;
+  EXPECT_NO_THROW(result = auth.authorize("jira", "read"));
+  EXPECT_EQ(result, Authorization::Unavailable);
+}

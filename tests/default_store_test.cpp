@@ -68,6 +68,10 @@ TEST(DefaultStore, EnvPassphraseOnRampConstructs) {
   auto store = keyward::defaultSecretStore("kw-app-env");
   ASSERT_NE(store, nullptr);
   EXPECT_FALSE(store->location().empty());
+  // R3-8: the on-ramp clears KEYWARD_PASSPHRASE from the environment after reading
+  // it, so it isn't inherited by children — verify it's already gone.
+  const char* leftover = std::getenv("KEYWARD_PASSPHRASE");
+  EXPECT_TRUE(leftover == nullptr || leftover[0] == '\0');
   unsetEnv("KEYWARD_PASSPHRASE");
   unsetEnv("KEYWARD_SILENCE_PLAINTEXT_WARNING");
 }

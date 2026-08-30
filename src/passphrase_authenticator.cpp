@@ -81,17 +81,27 @@ PassphraseAuthenticator::PassphraseAuthenticator(std::string verifier, Passphras
 
 Authorization PassphraseAuthenticator::authorize(std::string_view service,
                                                  std::string_view reason) {
-  for (int attempt = 0; attempt < max_attempts_; ++attempt) {
-    std::string prompt = "Passphrase to " + std::string(reason) + " " + std::string(service) + ":";
-    std::optional<std::string> entered = source_(prompt);
-    if (!entered) return Authorization::Cancelled;
-    // Hold the entered passphrase in secure memory; wipe the plain source copy.
-    Secret secure_entered(*entered);
-    secure_zero(entered->data(), entered->size());
-    bool ok = verify_passphrase(secure_entered.view(), verifier_);
-    if (ok) return Authorization::Allowed;
+  // R3-4: authorize MUST NOT throw (authenticator.hpp contract) — map every
+  // internal failure onto a verdict. A bad_alloc from the 19 MiB Argon2 work
+  // buffer, or a source/prompter that throws (EOF, TUI failure), would otherwise
+  // propagate and, as the primary of a FallbackAuthenticator, crash the caller
+  // instead of degrading. Fail closed to Unavailable.
+  try {
+    for (int attempt = 0; attempt < max_attempts_; ++attempt) {
+      std::string prompt =
+          "Passphrase to " + std::string(reason) + " " + std::string(service) + ":";
+      std::optional<std::string> entered = source_(prompt);
+      if (!entered) return Authorization::Cancelled;
+      // Hold the entered passphrase in secure memory; wipe the plain source copy.
+      Secret secure_entered(*entered);
+      secure_zero(entered->data(), entered->size());
+      bool ok = verify_passphrase(secure_entered.view(), verifier_);
+      if (ok) return Authorization::Allowed;
+    }
+    return Authorization::Denied;
+  } catch (...) {
+    return Authorization::Unavailable;
   }
-  return Authorization::Denied;
 }
 
 }  // namespace keyward

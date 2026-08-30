@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <new>  // std::bad_alloc (R3-5: secure_alloc failure)
 #include <vector>
 
 #include "keyward/crypto_primitives.hpp"
@@ -45,6 +46,10 @@ Secret derive_key(std::string_view passphrase, std::string_view salt) {
   // scratch and the work area are wiped/freed before returning.
   std::unique_ptr<unsigned char, void (*)(void*)> raw(
       static_cast<unsigned char*>(secure_alloc(kKeySize)), &secure_free);
+  // R3-5: secure_alloc (sodium_malloc) can fail (mlock quota / no secure pages);
+  // fail closed with bad_alloc instead of writing the Argon2 output to nullptr —
+  // matching the L2 hardening in Secret's ctor.
+  if (raw == nullptr) throw std::bad_alloc();
   std::vector<uint8_t> work(kWorkBytes);
 
   crypto_argon2_config cfg{CRYPTO_ARGON2_ID, kArgonBlocks, kArgonPasses, kArgonLanes};
