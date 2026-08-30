@@ -4,12 +4,22 @@
 #include <gtest/gtest.h>
 
 #include <string>
+#include <type_traits>
 
 #include "keyward/record.hpp"
+#include "keyward/secure_string.hpp"
 
 using keyward::decode_fields;
 using keyward::encode_fields;
 using keyward::Fields;
+
+// R3-3: the Fields backing store must use the zeroing allocator, so short (SSO)
+// field values shed by a push_back reallocation don't linger in freed heap. The
+// actual leak only reproduces on stdlibs that don't zero moved-from SSO buffers
+// (libstdc++), so guard the fix structurally here instead of via a flaky
+// heap-inspection test: this fails deterministically if the alias is reverted.
+static_assert(std::is_same_v<Fields::allocator_type, keyward::SecureAllocator<keyward::Field>>,
+              "Fields must use SecureAllocator (R3-3): std::allocator leaks SSO values on realloc");
 
 TEST(RecordCodec, RoundTripsMultipleFields) {
   Fields in{{"email", "a@b.com"}, {"url", "https://x"}, {"token", "abc123"}};

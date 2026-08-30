@@ -17,7 +17,16 @@ struct Field {
   bool operator==(const Field&) const = default;
 };
 
-using Fields = std::vector<Field>;
+// R3-3: a zeroing allocator on the backing store, not std::allocator. A Fields
+// vector grown by push_back sheds its old backing block on each reallocation —
+// and for a SHORT (SSO) field value the secret bytes live INSIDE the Field
+// object, i.e. inside that backing block, so an end-of-life wipe_fields (which
+// only reaches the live vector) leaves them in freed heap. Routing every block
+// the vector releases through SecureAllocator::deallocate zeroes the shed blocks
+// structurally — the same reason SecureString exists for the serialized blob.
+// (Large heap-allocated values move with the Field rather than being shed here,
+// and are wiped live before destruction.)
+using Fields = std::vector<Field, SecureAllocator<Field>>;
 
 // Serialize an ordered list of fields into one self-contained blob — the bytes
 // stored as a single item in the OS credential manager. The blob begins with a
